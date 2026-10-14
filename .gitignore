@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Next.js
+.next/
+**/.next/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Temporary files
+*.tmp
+*.temp
+
+# Generated plugin archives
+*.zip
+
+# Temporary / scratch test files
+temp-check/
+
+test-bogo*.js
+test-checkout.js
+test-engine.ts
+test-spend-free.js
+test_custom.js
+test_engine*.js
+
+# Temporary plugin inspection/extraction
+plugin/temp_check/
+
+# Plugin scratch/debug scripts
+plugin/ecommerce-plugin/dbcheck.js
+plugin/ecommerce-plugin/test-api.js
+plugin/ecommerce-plugin/test-osrm*.js

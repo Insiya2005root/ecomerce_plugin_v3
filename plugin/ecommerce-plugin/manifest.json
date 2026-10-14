@@ -1,0 +1,77 @@
+{
+    "id": "ecommerce-plugin",
+    "name": "Ecommerce Plugin",
+    "version": "1.0.0",
+    "description": "Product and e-commerce management",
+    "author": "Your Company",
+    "kind": "system",
+    "type": "ecommerce",
+    "icon": "shopping-bag",
+    "adminEntry": "ui/admin/index.html",
+    "blockEntry": "ui/block/index.js",
+    "styles": [
+        "ui/block/styles.css"
+    ],
+    "serverEntry": "api/index.js",
+    "models": [
+        "api/models"
+    ],
+    "permissions": [
+        "ecommerce.read",
+        "ecommerce.write",
+        "ecommerce.configure"
+    ],
+    "adminNav": [
+        {
+            "id": "ecommerce-dashboard",
+            "label": "Dashboard",
+            "entry": "ui/admin/index.html",
+            "icon": "layout-dashboard"
+        },
+        {
+            "id": "ecommerce-products",
+            "label": "Products",
+            "entry": "ui/admin/products/index.html",
+            "icon": "package"
+        },
+        {
+            "id": "ecommerce-categories",
+            "label": "Categories",
+            "entry": "ui/admin/categories/index.html",
+            "icon": "folder"
+        },
+        {
+            "id": "ecommerce-orders",
+            "label": "Orders",
+            "entry": "ui/admin/orders/index.html",
+            "icon": "shopping-cart"
+        },
+        {
+            "id": "ecommerce-discounts",
+            "label": "Discounts",
+            "entry": "ui/admin/discounts/index.html",
+            "icon": "tag"
+        },
+        {
+            "id": "ecommerce-cart",
+            "label": "Cart Simulator",
+            "entry": "ui/admin/cart/index.html",
+            "icon": "shopping-cart"
+        },
+        {
+            "id": "ecommerce-settings",
+            "label": "Settings",
+            "entry": "ui/admin/settings/index.html",
+            "icon": "settings"
+        },
+        {
+            "id": "ecommerce-storefront",
+            "label": "Storefront",
+            "entry": "ui/admin/storefront/index.html",
+            "icon": "layout-template"
+        }
+    ],
+    "maxSize": "50MB",
+    "size": 52428800,
+    "pluginSize": "50MB"
+}
