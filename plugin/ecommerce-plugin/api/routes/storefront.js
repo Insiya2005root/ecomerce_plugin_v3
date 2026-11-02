@@ -109,7 +109,11 @@ function toPublicProductDTO(prod, rawDiscountPercentage) {
     };
 }
 function toPublicSettingsDTO(settings) {
+    const store = settings?.store || {};
     return {
+        storeName: store.name ? String(store.name) : '',
+        supportEmail: store.email ? String(store.email) : '',
+        supportPhone: store.phone ? String(store.phone) : '',
         currency: 'INR',
         currencySymbol: '₹',
         taxesEnabled: settings?.taxesEnabled !== undefined ? Boolean(settings.taxesEnabled) : true,
@@ -117,7 +121,8 @@ function toPublicSettingsDTO(settings) {
         displayTaxBreakdown: settings?.displayTaxBreakdown !== undefined ? Boolean(settings.displayTaxBreakdown) : true,
         shippingMethod: settings?.shippingMethod === 'Distance' ? 'Distance' : 'Flat',
         freeShippingThreshold: Math.max(0, Number(settings?.freeShippingThreshold) || 0),
-        locationSelection: settings?.locationSelection === 'CustomerSelect' ? 'CustomerSelect' : 'Nearest',
+        // A fixed ship-from store (Settings → Shipping) means shoppers never pick a location.
+        locationSelection: settings?.locationSelection === 'CustomerSelect' && !settings?.shipFromLocationId ? 'CustomerSelect' : 'Nearest',
     };
 }
 const registerStorefrontRoutes = (app) => {

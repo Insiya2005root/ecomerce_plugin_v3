@@ -1,0 +1,289 @@
+diff --git a/package-lock.json b/package-lock.json
+index eb4105b..ef8de7e 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -56,6 +56,7 @@
+         "mysql2": "^3.23.3",
+         "next": "^16.3.3",
+         "next-themes": "^0.4.6",
++        "node-cron": "*",
+         "node-fetch": "^3.3.2",
+         "node-vibrant": "^4.0.4",
+         "nodemailer": "^6.10.1",
+@@ -7701,6 +7702,15 @@
+         "react-dom": "^16.8 || ^17 || ^18 || ^19 || ^19.0.0-rc"
+       }
+     },
++    "node_modules/node-cron": {
++      "version": "4.6.0",
++      "resolved": "https://registry.npmjs.org/node-cron/-/node-cron-4.6.0.tgz",
++      "integrity": "sha512-Si/bzYiKRHOB8/a99T2+SDGN582ONDMSTlJr5oCkT6GtnqPjZ2s10eoQRYkW9ZHwjVxONL+W8Fb+qR0AHMQsdg==",
++      "license": "ISC",
++      "engines": {
++        "node": ">=20"
++      }
++    },
+     "node_modules/node-domexception": {
+       "version": "1.0.0",
+       "funding": [
+diff --git a/src/app/dashboard/plugins/runtime/[pluginId]/[[...slug]]/page.tsx b/src/app/dashboard/plugins/runtime/[pluginId]/[[...slug]]/page.tsx
+index e4daa92..a7c2153 100644
+--- a/src/app/dashboard/plugins/runtime/[pluginId]/[[...slug]]/page.tsx
++++ b/src/app/dashboard/plugins/runtime/[pluginId]/[[...slug]]/page.tsx
+@@ -274,7 +274,7 @@ export default function UploadedSystemPluginRuntimePage() {
+             title={`${plugin.name}${pageLabel ? ` - ${pageLabel}` : ''} admin`}
+             src={adminSrc}
+             className="h-full w-full border-0 bg-white"
+-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
++            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+             onLoad={() => setIframeLoaded(true)}
+           />
+         </div>
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index d82bf76..5b9a49f 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -33,7 +33,7 @@ import {
+   type LucideIcon,
+ } from 'lucide-react';
+ import { usePlugins, type PluginRecord } from '@/context/PluginContext';
+-import { runtimePluginPath } from '@/lib/plugins/adminNav';
++import { orderAdminNavForSidebar, runtimePluginPath } from '@/lib/plugins/adminNav';
+ import { resolveNavIcon } from '@/lib/plugins/navIcons';
+ import { useRbac } from '@/hooks/useRbac';
+ import type { NavSectionId } from '@/lib/rbac/capabilityDefinitions';
+@@ -43,7 +43,8 @@ type NavSection = {
+   icon: LucideIcon;
+   path?: string;
+   navSection?: NavSectionId;
+-  links: { label: string; icon: LucideIcon; path: string }[];
++  /** parentPath: set on nested plugin pages; they render indented under that link. */
++  links: { label: string; icon: LucideIcon; path: string; parentPath?: string }[];
+ };
+ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+ import { Button } from '@/components/ui/button';
+@@ -224,10 +225,11 @@ function uploadedSystemNavSections(
+             label: p.name || p.pluginId,
+             icon: Puzzle,
+             navSection: 'uploaded-plugins' as NavSectionId,
+-            links: navPages.map((item) => ({
++            links: orderAdminNavForSidebar(navPages).map(({ item, parentId }) => ({
+               label: item.label,
+               icon: resolveNavIcon(item.icon),
+               path: runtimePluginPath(p.pluginId, item.id),
++              ...(parentId ? { parentPath: runtimePluginPath(p.pluginId, parentId) } : {}),
+             })),
+           },
+         ];
+@@ -486,24 +488,35 @@ export default function Sidebar() {
+                         </Tooltip>
+ 
+                         <CollapsibleContent className="pl-9 pr-2 py-1 space-y-1">
+-                          {item.links.map((link) => (
++                          {item.links
++                            .filter(
++                              (link) =>
++                                // Nested pages show while their parent or a sibling is the current page.
++                                !link.parentPath ||
++                                isActive(link.parentPath) ||
++                                item.links.some((l) => l.parentPath === link.parentPath && isActive(l.path))
++                            )
++                            .map((link) => (
+                             <Button
+-                              key={link.label}
++                              key={link.path}
+                               variant={isActive(link.path) ? 'secondary' : 'ghost'}
+                               size="sm"
+                               className={cn(
+                                 'w-full justify-start h-9',
++                                link.parentPath && 'h-8 pl-8 text-[13px]',
+                                 isActive(link.path) && 'font-medium'
+                               )}
+                               asChild
+                             >
+                               <Link href={link.path} prefetch>
+-                                <link.icon
+-                                  className={cn(
+-                                    'h-4 w-4 mr-2',
+-                                    isActive(link.path) ? 'text-primary' : 'text-muted-foreground'
+-                                  )}
+-                                />
++                                {!link.parentPath && (
++                                  <link.icon
++                                    className={cn(
++                                      'h-4 w-4 mr-2',
++                                      isActive(link.path) ? 'text-primary' : 'text-muted-foreground'
++                                    )}
++                                  />
++                                )}
+                                 <span>{link.label}</span>
+                               </Link>
+                             </Button>
+diff --git a/src/lib/plugins/adminNav.ts b/src/lib/plugins/adminNav.ts
+index 144963a..70fadbe 100644
+--- a/src/lib/plugins/adminNav.ts
++++ b/src/lib/plugins/adminNav.ts
+@@ -18,6 +18,26 @@ export function runtimePluginPath(pluginId: string, navId?: string): string {
+   return navId ? `${base}/${encodeURIComponent(navId)}` : base;
+ }
+ 
++/**
++ * Orders visible nav pages for the sidebar: each nested page directly after its parent.
++ * A page whose parent is not visible (e.g. hidden by role page access) is treated as top-level.
++ */
++export function orderAdminNavForSidebar(
++  pages: PluginAdminNavItem[]
++): Array<{ item: PluginAdminNavItem; parentId?: string }> {
++  const visibleIds = new Set(pages.map((item) => item.id));
++  const isNested = (item: PluginAdminNavItem) =>
++    Boolean(item.parent && item.parent !== item.id && visibleIds.has(item.parent));
++  return pages
++    .filter((item) => !isNested(item))
++    .flatMap((top) => [
++      { item: top },
++      ...pages
++        .filter((child) => isNested(child) && child.parent === top.id)
++        .map((child) => ({ item: child, parentId: top.id })),
++    ]);
++}
++
+ export function resolveAdminNavEntry(
+   adminEntry: string | undefined,
+   adminNav: PluginAdminNavItem[] | undefined,
+@@ -68,8 +88,25 @@ export function parseAdminNav(raw: unknown): PluginAdminNavItem[] | undefined {
+     seenIds.add(id);
+ 
+     const icon = typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : undefined;
++    const parent =
++      typeof item.parent === 'string' && item.parent.trim() ? item.parent.trim().toLowerCase() : undefined;
++
++    items.push({ id, label, entry: entryPath, icon, ...(parent ? { parent } : {}) });
++  }
+ 
+-    items.push({ id, label, entry: entryPath, icon });
++  // Parents may appear anywhere in the list, so validate nesting once every id is known.
++  const byId = new Map(items.map((item) => [item.id, item]));
++  for (const item of items) {
++    if (!item.parent) continue;
++    const parentItem = byId.get(item.parent);
++    if (!parentItem) {
++      throw new Error(`manifest.json "adminNav" entry "${item.label}" has unknown parent "${item.parent}"`);
++    }
++    if (parentItem.id === item.id || parentItem.parent) {
++      throw new Error(
++        `manifest.json "adminNav" entry "${item.label}" must use a top-level item as its parent (one level of nesting)`
++      );
++    }
+   }
+ 
+   return items;
+diff --git a/src/lib/plugins/server/sdk.ts b/src/lib/plugins/server/sdk.ts
+index 64de8a6..b920e44 100644
+--- a/src/lib/plugins/server/sdk.ts
++++ b/src/lib/plugins/server/sdk.ts
+@@ -56,9 +56,14 @@ export function createCmsSdk(pluginId: string, permissions: string[], user: Auth
+         if (!userConn) {
+           throw new Error('Call cms.database.user() before registering models');
+         }
+-        const model =
+-          (userConn.models[modelName] as mongoose.Model<unknown>) ||
+-          userConn.model<unknown>(modelName, schema);
++        // A re-uploaded plugin must use its current schema. The connection keeps models compiled by
++        // earlier loads, which would silently drop newly added fields until the server restarts.
++        if (userConn.models[modelName]) {
++          // Mongoose exposes deleteModel; the MySQL/Postgres adapters only keep a plain models map.
++          if (typeof userConn.deleteModel === 'function') userConn.deleteModel(modelName);
++          else delete (userConn.models as Record<string, unknown>)[modelName];
++        }
++        const model = userConn.model<unknown>(modelName, schema);
+         registeredModels.set(modelName, model);
+         return model;
+       },
+diff --git a/src/lib/plugins/storage.ts b/src/lib/plugins/storage.ts
+index 85e3309..03bdeac 100644
+--- a/src/lib/plugins/storage.ts
++++ b/src/lib/plugins/storage.ts
+@@ -15,7 +15,7 @@ export const PLUGINS_FRONTEND_DIR = process.env.PLUGINS_FRONTEND_DIR
+ export const PLUGINS_PUBLIC_DIR = PLUGINS_FRONTEND_DIR;
+ 
+ export const MAX_PLUGIN_ZIP_BYTES = 25 * 1024 * 1024;
+-export const MAX_PLUGIN_FILES = 200;
++export const MAX_PLUGIN_FILES = 1000;
+ 
+ function resolveFrontendRoot(): string {
+   const root = PLUGINS_FRONTEND_DIR;
+diff --git a/src/models/Plugin.ts b/src/models/Plugin.ts
+index 193d51d..73c7f94 100644
+--- a/src/models/Plugin.ts
++++ b/src/models/Plugin.ts
+@@ -21,6 +21,7 @@ const PluginSchema = new Schema<IPluginDocument>(
+           label: { type: String, required: true },
+           entry: { type: String, required: true },
+           icon: { type: String },
++          parent: { type: String },
+         },
+       ],
+       default: undefined,
+diff --git a/src/types/index.ts b/src/types/index.ts
+index 5b808a8..e3daeeb 100644
+--- a/src/types/index.ts
++++ b/src/types/index.ts
+@@ -486,6 +486,8 @@ export interface PluginAdminNavItem {
+   entry: string;
+   /** Optional Lucide icon name (e.g. list, users, settings). */
+   icon?: string;
++  /** Optional id of a top-level adminNav item; the sidebar nests this page under it (one level). */
++  parent?: string;
+ }
+ 
+ export interface IPlugin {
+diff --git a/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs b/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs
+index 012e534..55ff876 100644
+--- a/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs
++++ b/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs
+@@ -1,7 +1,7 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.ThemeRegistrationContext = void 0;
+-const createEmptyRegistry_1 = require("D:/Professional/ATPL/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/createEmptyRegistry.ts.cjs");
++const createEmptyRegistry_1 = require("C:/Users/InsiyaMerchant/Projects/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/createEmptyRegistry.ts.cjs");
+ function normalizePath(p) {
+     return p.replace(/\\/g, '/').replace(/^\.\//, '');
+ }
+diff --git a/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs b/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs
+index 8f0de39..84fe28b 100644
+--- a/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs
++++ b/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs
+@@ -2,7 +2,7 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.defineTheme = defineTheme;
+ exports.definePlugin = definePlugin;
+-const ThemeRegistrationContext_1 = require("D:/Professional/ATPL/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs");
++const ThemeRegistrationContext_1 = require("C:/Users/InsiyaMerchant/Projects/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs");
+ /**
+  * Bootstrap entry for theme authors — mirrors WordPress `functions.php`.
+  * Executes the registration callback immediately and returns a frozen definition.
+diff --git a/storage/theme-engine-compiled/_cms-sdk/1.0.0/sdk/index.ts.cjs b/storage/theme-engine-compiled/_cms-sdk/1.0.0/sdk/index.ts.cjs
+index 2ea6eed..8c073bd 100644
+--- a/storage/theme-engine-compiled/_cms-sdk/1.0.0/sdk/index.ts.cjs
++++ b/storage/theme-engine-compiled/_cms-sdk/1.0.0/sdk/index.ts.cjs
+@@ -1,6 +1,6 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.definePlugin = exports.defineTheme = void 0;
+-var defineTheme_1 = require("D:/Professional/ATPL/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs");
++var defineTheme_1 = require("C:/Users/InsiyaMerchant/Projects/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs");
+ Object.defineProperty(exports, "defineTheme", { enumerable: true, get: function () { return defineTheme_1.defineTheme; } });
+ Object.defineProperty(exports, "definePlugin", { enumerable: true, get: function () { return defineTheme_1.definePlugin; } });
+diff --git a/storage/theme-engine-compiled/theme-engine-default/1.2.1/theme.ts.cjs b/storage/theme-engine-compiled/theme-engine-default/1.2.1/theme.ts.cjs
+index 31125b3..d31975b 100644
+--- a/storage/theme-engine-compiled/theme-engine-default/1.2.1/theme.ts.cjs
++++ b/storage/theme-engine-compiled/theme-engine-default/1.2.1/theme.ts.cjs
+@@ -1,6 +1,6 @@
+ "use strict";
+ Object.defineProperty(exports, "__esModule", { value: true });
+-const { defineTheme, definePlugin } = require("D:/Professional/ATPL/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs");
++const { defineTheme, definePlugin } = require("C:/Users/InsiyaMerchant/Projects/nextcmsmains/storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs");
+ exports.default = defineTheme((theme) => {
+     theme.registerTemplate('index', './templates/Index');
+     theme.registerBlock({

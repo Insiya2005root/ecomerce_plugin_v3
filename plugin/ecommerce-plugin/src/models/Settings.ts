@@ -23,10 +23,14 @@ export = {
       freeShippingThreshold: { type: Number, default: 0 },
       shippingRatePerKm: { type: Number, default: 0 },
       locationSelection: { type: String, enum: ['Nearest', 'CustomerSelect'], default: 'Nearest' },
+      shipFromLocationId: { type: String, default: '' }, // a fixed store to measure distance from; '' = nearest
       distanceRounding: { type: String, enum: ['Exact', 'Nearest', 'Up'], default: 'Up' },
       routeFailureBehaviour: { type: String, enum: ['Fallback'], default: 'Fallback' },
       fallbackShippingCost: { type: Number, default: 0 },
       
+      // Settings → General (name, contact, GSTIN, address, order prefix, low-stock level)
+      store: { type: Object },
+
       // Deprecated fields
       startCity: { type: Object },
       endCity: { type: Object }

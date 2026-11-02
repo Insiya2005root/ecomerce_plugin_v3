@@ -35,10 +35,31 @@
             "icon": "package"
         },
         {
+            "id": "ecommerce-collections",
+            "label": "Collections",
+            "entry": "ui/admin/collections/index.html",
+            "icon": "folder",
+            "parent": "ecommerce-products"
+        },
+        {
             "id": "ecommerce-categories",
             "label": "Categories",
             "entry": "ui/admin/categories/index.html",
-            "icon": "folder"
+            "icon": "folder",
+            "parent": "ecommerce-products"
+        },
+        {
+            "id": "ecommerce-inventory",
+            "label": "Inventory",
+            "entry": "ui/admin/inventory/index.html",
+            "icon": "list"
+        },
+        {
+            "id": "ecommerce-inventory-reservations",
+            "label": "Reservations",
+            "entry": "ui/admin/inventory/reservations/index.html",
+            "icon": "list",
+            "parent": "ecommerce-inventory"
         },
         {
             "id": "ecommerce-orders",
@@ -47,22 +68,92 @@
             "icon": "shopping-cart"
         },
         {
+            "id": "ecommerce-cart",
+            "label": "Cart",
+            "entry": "ui/admin/cart/index.html",
+            "icon": "shopping-cart",
+            "parent": "ecommerce-orders"
+        },
+        {
+            "id": "ecommerce-customers",
+            "label": "Customers",
+            "entry": "ui/admin/customers/index.html",
+            "icon": "users"
+        },
+        {
             "id": "ecommerce-discounts",
-            "label": "Discounts",
+            "label": "Promotions",
             "entry": "ui/admin/discounts/index.html",
             "icon": "tag"
         },
         {
-            "id": "ecommerce-cart",
-            "label": "Cart Simulator",
-            "entry": "ui/admin/cart/index.html",
-            "icon": "shopping-cart"
+            "id": "ecommerce-discounts-automatic",
+            "label": "Automatic discounts",
+            "entry": "ui/admin/discounts/all/index.html",
+            "icon": "tag",
+            "parent": "ecommerce-discounts"
+        },
+        {
+            "id": "ecommerce-discounts-coupons",
+            "label": "Coupons",
+            "entry": "ui/admin/discounts/coupons/index.html",
+            "icon": "tag",
+            "parent": "ecommerce-discounts"
+        },
+        {
+            "id": "ecommerce-discounts-campaigns",
+            "label": "Campaigns",
+            "entry": "ui/admin/discounts/campaigns/index.html",
+            "icon": "tag",
+            "parent": "ecommerce-discounts"
+        },
+        {
+            "id": "ecommerce-discounts-custom",
+            "label": "Custom rules",
+            "entry": "ui/admin/discounts/custom/index.html",
+            "icon": "tag",
+            "parent": "ecommerce-discounts"
         },
         {
             "id": "ecommerce-settings",
             "label": "Settings",
             "entry": "ui/admin/settings/index.html",
             "icon": "settings"
+        },
+        {
+            "id": "ecommerce-settings-general",
+            "label": "General",
+            "entry": "ui/admin/settings/general/index.html",
+            "icon": "settings",
+            "parent": "ecommerce-settings"
+        },
+        {
+            "id": "ecommerce-settings-profile",
+            "label": "Profile",
+            "entry": "ui/admin/settings/profile/index.html",
+            "icon": "user",
+            "parent": "ecommerce-settings"
+        },
+        {
+            "id": "ecommerce-settings-tax",
+            "label": "Tax",
+            "entry": "ui/admin/settings/tax/index.html",
+            "icon": "settings",
+            "parent": "ecommerce-settings"
+        },
+        {
+            "id": "ecommerce-settings-shipping",
+            "label": "Shipping",
+            "entry": "ui/admin/settings/shipping/index.html",
+            "icon": "settings",
+            "parent": "ecommerce-settings"
+        },
+        {
+            "id": "ecommerce-settings-locations",
+            "label": "Locations",
+            "entry": "ui/admin/settings/locations/index.html",
+            "icon": "settings",
+            "parent": "ecommerce-settings"
         },
         {
             "id": "ecommerce-storefront",

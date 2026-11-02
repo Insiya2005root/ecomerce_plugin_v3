@@ -1,0 +1,30 @@
+ M package-lock.json
+ M package.json
+ M src/app/dashboard/plugins/runtime/[pluginId]/[[...slug]]/page.tsx
+ M src/components/Sidebar.tsx
+ M src/lib/plugins/adminNav.ts
+ M src/lib/plugins/server/sdk.ts
+ M src/lib/plugins/storage.ts
+ M src/models/Plugin.ts
+ M src/types/index.ts
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/ThemeRegistrationContext.ts.cjs
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/createEmptyRegistry.ts.cjs
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/defineTheme.ts.cjs
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/registration/types.ts.cjs
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/sdk/index.ts.cjs
+ M storage/theme-engine-compiled/_cms-sdk/1.0.0/types.ts.cjs
+ M storage/theme-engine-compiled/theme-engine-default/1.2.1/blocks/Hero/Renderer.tsx.cjs
+ M storage/theme-engine-compiled/theme-engine-default/1.2.1/blocks/Hero/schema.ts.cjs
+ M storage/theme-engine-compiled/theme-engine-default/1.2.1/templates/Index.tsx.cjs
+ M storage/theme-engine-compiled/theme-engine-default/1.2.1/theme.ts.cjs
+?? AGENTS.md
+?? CLAUDE.md
+?? cms_bogo_test.log
+?? cms_boot_error.log
+?? cms_final.log
+?? cms_test.log
+?? cms_test2.log
+?? cms_test3.log
+?? cms_test4.log
+?? src/app/api/plugins/ecommerce-plugin/
+?? test_checkout.js

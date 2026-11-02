@@ -34,6 +34,15 @@ module.exports = function (app) {
             res.status(500).json({ success: false, message: error.message });
         }
     });
+    const sendCategoryError = (res, error) => {
+        if (error?.code === 11000) {
+            return res.status(409).json({ success: false, message: 'A category with this handle already exists.', field: 'slug' });
+        }
+        if (error?.name === 'ValidationError' || error?.name === 'CastError') {
+            return res.status(400).json({ success: false, message: error.message });
+        }
+        return res.status(500).json({ success: false, message: error.message });
+    };
     app.post('/categories', async (req, res) => {
         try {
             const Category = require('../models/Category').getModel();
@@ -42,17 +51,34 @@ module.exports = function (app) {
             res.json({ success: true, category: newCategory });
         }
         catch (error) {
-            res.status(500).json({ success: false, message: error.message });
+            sendCategoryError(res, error);
         }
     });
     app.put('/categories/:id', async (req, res) => {
         try {
             const Category = require('../models/Category').getModel();
+            const parentId = req.body?.parentId;
+            if (parentId) {
+                // Walk up from the proposed parent; reaching this category would create a cycle.
+                let cursor = await Category.findById(parentId).lean();
+                if (!cursor)
+                    return res.status(400).json({ success: false, message: 'Parent category not found.', field: 'parentId' });
+                const seen = new Set();
+                while (cursor && !seen.has(String(cursor._id))) {
+                    if (String(cursor._id) === String(req.params.id)) {
+                        return res.status(400).json({ success: false, message: 'A category cannot be placed inside itself or one of its subcategories.', field: 'parentId' });
+                    }
+                    seen.add(String(cursor._id));
+                    cursor = cursor.parentId ? await Category.findById(cursor.parentId).lean() : null;
+                }
+            }
             const updated = await Category.findByIdAndUpdate(req.params.id, req.body, { new: true });
+            if (!updated)
+                return res.status(404).json({ success: false, message: 'Category not found.' });
             res.json({ success: true, category: updated });
         }
         catch (error) {
-            res.status(500).json({ success: false, message: error.message });
+            sendCategoryError(res, error);
         }
     });
     app.delete('/categories/:id', async (req, res) => {

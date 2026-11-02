@@ -1,284 +1,478 @@
-﻿"use client";
+﻿'use client';
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import * as React from 'react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Add01Icon, Delete02Icon, MinusSignIcon, Search01Icon, ShoppingCart01Icon } from '@hugeicons/core-free-icons';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { AddressFields } from '@/components/admin/AddressFields';
+import { Field, SelectField, TextInput, controlClass } from '@/components/admin/fields';
+import { SectionCard } from '@/components/admin/SectionCard';
+import { EmptyState, InlineError } from '@/components/admin/StateViews';
+import { AdminToaster, toast } from '@/components/admin/toast';
+import { useConfirm } from '@/components/admin/ConfirmDialog';
+import { LineItem, PricingBreakdown } from '@/components/orders/OrderBits';
+import { ProductStatusBadge, ProductThumbnail } from '@/components/products/ProductBits';
+import { formatMoney } from '@/lib/format';
+import { calculateCart, placeOrder } from '@/lib/orders/api';
+import { CART_STORAGE_KEY } from '@/lib/orders/cartStorage';
+import type { Address, CartCalculation, CartLine, OrderItem } from '@/lib/orders/types';
+import { listProducts } from '@/lib/products/api';
+import type { Product } from '@/lib/products/types';
+import { orderUrls } from '@/lib/products/urls';
+import { cn } from '@/lib/utils';
 
-export default function CartSimulatorPage() {
-  const [products, setProducts] = useState<any[]>([]);
-  const [cartItems, setCartItems] = useState<any[]>([]);
-  const [search, setSearch] = useState("");
-  const [couponCode, setCouponCode] = useState("");
-  const [addressLine1, setAddressLine1] = useState("");
-  const [city, setCity] = useState("Surat");
-  const [state, setState] = useState("Gujarat");
-  const [postalCode, setPostalCode] = useState("395007");
-  const [country, setCountry] = useState("India");
-  const [selectedLocationId, setSelectedLocationId] = useState("");
-  const [calculation, setCalculation] = useState<any>(null);
+const API_BASE = '/api/plugins/ecommerce-plugin';
+const STORAGE_KEY = CART_STORAGE_KEY;
 
-  useEffect(() => {
-    fetch("/api/plugins/ecommerce-plugin/products")
-      .then(r => r.json())
-      .then(d => {
-        if (d.success) setProducts(d.products);
-      });
-  }, []);
+type Customer = { name: string; email: string; phone: string };
+type CartState = { lines: CartLine[]; coupon: string; customer: Customer; address: Address; locationId: string };
 
-  useEffect(() => {
-    if (cartItems.length > 0) {
-      calculateCart();
-    } else {
-      setCalculation(null);
+// Same defaults the old cart simulator used, so tax/shipping rules can be tested straight away.
+const EMPTY_CART: CartState = {
+  lines: [],
+  coupon: '',
+  customer: { name: '', email: '', phone: '' },
+  address: { addressLine1: '', addressLine2: '', city: 'Surat', state: 'Gujarat', postalCode: '395007', country: 'India' },
+  locationId: '',
+};
+
+const lineKey = (l: { productId: string; variantId?: string }) => `${l.productId}:${l.variantId ?? ''}`;
+
+function readStored(): string {
+  try {
+    return localStorage.getItem(STORAGE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function parseStored(raw: string | null): CartState | null {
+  if (raw === null) return null;
+  try {
+    const data = JSON.parse(raw);
+    return { ...EMPTY_CART, ...data, customer: { ...EMPTY_CART.customer, ...data.customer }, address: { ...EMPTY_CART.address, ...data.address } };
+  } catch {
+    return { ...EMPTY_CART };
+  }
+}
+
+const noSubscribe = () => () => {};
+
+function variantLabel(v: NonNullable<Product['variants']>[number]) {
+  return [v.size, v.color].filter(Boolean).join(' / ') || 'Variant';
+}
+
+function CartPage() {
+  // Cart survives refreshes (browser storage). Server snapshot is null so static HTML and hydration match.
+  const storedRaw = React.useSyncExternalStore(noSubscribe, readStored, () => null);
+  const initial = React.useMemo(() => parseStored(storedRaw), [storedRaw]);
+  const [edited, setEdited] = React.useState<CartState | null>(null);
+  const cart = edited ?? initial;
+  const { confirm, dialog } = useConfirm();
+
+  const setCart = (patch: Partial<CartState>) => {
+    if (!cart) return;
+    const next = { ...cart, ...patch };
+    setEdited(next);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Storage unavailable: the cart still works for this visit.
     }
-  }, [cartItems]);
-
-  const handleAddProduct = (p: any) => {
-    const existing = cartItems.find(i => i.productId === p._id);
-    if (existing) {
-      setCartItems(cartItems.map(i => i.productId === p._id ? { ...i, quantity: i.quantity + 1 } : i));
-    } else {
-      setCartItems([...cartItems, { productId: p._id, quantity: 1, name: p.name, price: p.price }]);
-    }
-    setSearch("");
   };
 
-  const updateQuantity = (pid: string, delta: number) => {
-    setCartItems(items => {
-      const existing = items.find(i => i.productId === pid);
-      if (!existing) return items;
-      const nq = existing.quantity + delta;
-      if (nq <= 0) return items.filter(i => i.productId !== pid);
-      return items.map(i => i.productId === pid ? { ...i, quantity: nq } : i);
+  // Product details for the lines (name, image, variants, stock).
+  const [products, setProducts] = React.useState<Record<string, Product>>({});
+  const missingIds = (cart?.lines ?? []).map((l) => l.productId).filter((id) => !products[id]);
+  const missingKey = [...new Set(missingIds)].join(',');
+  React.useEffect(() => {
+    if (!missingKey) return;
+    let active = true;
+    fetch(`${API_BASE}/products?ids=${missingKey}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (active && d.success) setProducts((prev) => ({ ...prev, ...Object.fromEntries((d.products as Product[]).map((p) => [p._id, p])) }));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [missingKey]);
+
+  // Product search
+  const [search, setSearch] = React.useState('');
+  const [results, setResults] = React.useState<{ q: string; products: Product[] } | null>(null);
+  React.useEffect(() => {
+    const q = search.trim();
+    if (!q) return;
+    const controller = new AbortController();
+    const t = window.setTimeout(() => {
+      listProducts({ search: q, limit: 8, sort: 'name', order: 'asc' }, controller.signal)
+        .then((res) => setResults({ q, products: res.products }))
+        .catch(() => {});
+    }, 250);
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+  }, [search]);
+  const visibleResults = search.trim() && results?.q === search.trim() ? results.products : [];
+
+  // Live pricing through the same pipeline orders use.
+  const [couponDraft, setCouponDraft] = React.useState<string | null>(null);
+  const couponValue = couponDraft ?? cart?.coupon ?? '';
+  const pricingInput = cart
+    ? { items: cart.lines, couponCode: cart.coupon || undefined, customerAddress: cart.address, selectedLocationId: cart.locationId || undefined }
+    : null;
+  const pricingKey = pricingInput && cart!.lines.length ? JSON.stringify(pricingInput) : null;
+  const [calc, setCalc] = React.useState<{ key: string; data: CartCalculation | null; error: string | null } | null>(null);
+  React.useEffect(() => {
+    if (!pricingKey) return;
+    const controller = new AbortController();
+    const t = window.setTimeout(() => {
+      calculateCart(JSON.parse(pricingKey), controller.signal)
+        .then((data) => setCalc({ key: pricingKey, data, error: null }))
+        .catch((err) => {
+          if (!controller.signal.aborted) setCalc({ key: pricingKey, data: null, error: err instanceof Error ? err.message : 'Could not calculate the cart.' });
+        });
+    }, 350);
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
+  }, [pricingKey]);
+  const calcCurrent = calc && calc.key === pricingKey ? calc : null;
+  const lastData = calc?.data ?? null;
+  const calculating = Boolean(pricingKey) && !calcCurrent;
+
+  const [placing, setPlacing] = React.useState(false);
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [placeError, setPlaceError] = React.useState<string | null>(null);
+
+  if (!cart) return null;
+
+  const addProduct = (p: Product) => {
+    setProducts((prev) => ({ ...prev, [p._id]: p }));
+    const variants = p.variants ?? [];
+    const variant = variants.find((v) => (v.stock ?? 0) > 0) ?? variants[0];
+    const line: CartLine = { productId: p._id, ...(variant?._id ? { variantId: String(variant._id) } : {}), quantity: 1 };
+    const existing = cart.lines.find((l) => lineKey(l) === lineKey(line));
+    setCart({
+      lines: existing ? cart.lines.map((l) => (lineKey(l) === lineKey(line) ? { ...l, quantity: l.quantity + 1 } : l)) : [...cart.lines, line],
     });
+    setSearch('');
   };
 
-  const calculateCart = async () => {
-    if (cartItems.length === 0) {
-      setCalculation(null);
+  const updateLine = (key: string, patch: Partial<CartLine>) => {
+    const next = cart.lines.map((l) => (lineKey(l) === key ? { ...l, ...patch } : l));
+    // Changing a variant can make two lines identical; merge them.
+    const merged: CartLine[] = [];
+    for (const l of next) {
+      const same = merged.find((m) => lineKey(m) === lineKey(l));
+      if (same) same.quantity += l.quantity;
+      else merged.push({ ...l });
+    }
+    setCart({ lines: merged.filter((l) => l.quantity > 0) });
+  };
+
+  const priced = (line: CartLine): OrderItem | undefined =>
+    lastData?.items.find((i) => !i.isAutoAddedGift && String(i.productId) === line.productId && (i.variantId ?? '') === (line.variantId ?? ''));
+  const giftLines = (lastData?.items ?? []).filter((i) => i.isAutoAddedGift);
+  const stockIssues = calcCurrent?.data?.stockIssues ?? [];
+  const locations = lastData?.pricing.availableLocations ?? [];
+
+  const validate = () => {
+    const found: Record<string, string> = {};
+    if (!cart.customer.name.trim()) found.name = 'Customer name is required.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cart.customer.email.trim())) found.email = 'Enter a valid email.';
+    if (!(cart.address.addressLine1 ?? '').trim()) found.addressLine1 = 'Address is required.';
+    return found;
+  };
+
+  const place = async () => {
+    const found = validate();
+    setErrors(found);
+    if (Object.keys(found).length) {
+      document.getElementById(Object.keys(found)[0])?.focus();
       return;
     }
+    setPlacing(true);
+    setPlaceError(null);
     try {
-      const res = await fetch("/api/plugins/ecommerce-plugin/cart/calculate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: cartItems, couponCode, customerAddress: { addressLine1, city, state, postalCode, country }, selectedLocationId })
+      const res = await placeOrder({
+        items: cart.lines,
+        couponCode: cart.coupon || undefined,
+        customerDetails: { name: cart.customer.name.trim(), email: cart.customer.email.trim(), phone: cart.customer.phone.trim() || undefined },
+        customerAddress: cart.address,
+        selectedLocationId: cart.locationId || undefined,
       });
-      const data = await res.json();
-      if (data.success) {
-        setCalculation(data);
-      }
-    } catch (e: any) {
-      console.error(e);
+      setCart({ lines: [], coupon: '' });
+      toast.flash('Order placed', `#${res.orderNumber}`);
+      window.location.href = orderUrls.detail(String(res.orderId));
+    } catch (err) {
+      setPlaceError(err instanceof Error ? err.message : 'Could not place the order.');
+      setPlacing(false);
     }
   };
 
-  const filteredProducts = search.trim() === "" ? [] : products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  const clearCart = () =>
+    confirm({
+      title: 'Clear cart?',
+      description: 'All items and the discount code will be removed. Customer details are kept.',
+      confirmLabel: 'Clear cart',
+      destructive: true,
+      onConfirm: () => setCart({ lines: [], coupon: '' }),
+    });
+
+  const setCustomer = (patch: Partial<Customer>) => {
+    setCart({ customer: { ...cart.customer, ...patch } });
+    setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !(k in patch))));
+  };
+  const setAddress = (patch: Partial<Address>) => {
+    setCart({ address: { ...cart.address, ...patch } });
+    setErrors((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !(k in patch))));
+  };
 
   return (
-    <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 mb-20 font-sans">
-      
-      {/* LEFT COLUMN: Add Products & Context */}
-      <div className="space-y-12">
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold tracking-tight">Add Products</h2>
-          <hr className="border-gray-200 dark:border-gray-800" />
-          
-          <div className="flex items-center gap-4">
-            <span className="whitespace-nowrap font-medium">Search Product:</span>
-            <div className="relative w-full">
-              <Input 
-                placeholder="Search..." 
-                value={search} 
-                onChange={e => setSearch(e.target.value)} 
+    <div className="space-y-5">
+      <AdminPageHeader
+        breadcrumbs={[{ label: 'Orders', href: orderUrls.list() }, { label: 'Cart' }]}
+        title="Cart"
+        description="Build a cart to check discounts, shipping and tax live, then place it as a real order."
+        actions={
+          cart.lines.length > 0 && (
+            <Button variant="outline" size="sm" className="rounded-md" onClick={clearCart}>
+              Clear cart
+            </Button>
+          )
+        }
+      />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="min-w-0 space-y-4">
+          <SectionCard title="Items">
+            <div className="relative border-b px-5 py-3">
+              <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute top-1/2 left-7.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="cart-product-search"
+                type="search"
+                aria-label="Search products to add"
+                placeholder="Search products by name or SKU to add…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className={cn(controlClass, 'pl-8')}
               />
-              {filteredProducts.length > 0 && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-900 border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                  {filteredProducts.map(p => (
-                    <div 
-                      key={p._id} 
-                      className="p-3 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer flex justify-between"
-                      onClick={() => handleAddProduct(p)}
-                    >
-                      <span>{p.name}</span>
-                      <span>₹{p.price?.toFixed(2)}</span>
-                    </div>
+              {visibleResults.length > 0 && (
+                <ul className="absolute inset-x-5 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-lg border bg-popover shadow-lg" role="listbox">
+                  {visibleResults.map((p) => (
+                    <li key={p._id}>
+                      <button type="button" role="option" aria-selected={false} className="flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] hover:bg-muted/60" onClick={() => addProduct(p)}>
+                        <ProductThumbnail src={p.images?.[0]} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{p.name}</span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {p.sku}
+                            {p.variants?.length ? ` · ${p.variants.length} variants` : ` · ${p.stock ?? 0} in stock`}
+                          </span>
+                        </span>
+                        <span className="tabular-nums">{formatMoney(p.pricing?.catalogPrice ?? p.price)}</span>
+                        {p.status !== 'Published' && <ProductStatusBadge status={p.status} />}
+                      </button>
+                    </li>
                   ))}
-                </div>
+                </ul>
+              )}
+              {search.trim() && results?.q === search.trim() && visibleResults.length === 0 && (
+                <p className="pt-2 text-xs text-muted-foreground">No products match “{search.trim()}”.</p>
               )}
             </div>
-          </div>
 
-          <div className="space-y-6 mt-8">
-            {(calculation?.items || cartItems).map((item: any, idx: number) => (
-              <div key={item.productId + '_' + idx} className="flex flex-col gap-3 pb-4 border-b border-gray-100 dark:border-gray-800">
-                <div className="flex justify-between font-semibold text-lg">
-                  <div className="flex items-center gap-2">
-                    <span>{item.name}</span>
-                    {item.isAutoAddedGift && (
-                      <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded font-bold tracking-wide uppercase">FREE GIFT</span>
-                    )}
-                  </div>
-                  {item.isAutoAddedGift ? (
-                    <div className="flex flex-col items-end">
-                       <span className="line-through text-gray-400 text-sm">₹{(item.originalPrice || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                       <span className="text-green-600">FREE</span>
-                    </div>
-                  ) : (
-                    <span>₹{(item.price || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                  )}
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    {!item.isAutoAddedGift ? (
-                      <>
-                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-none" onClick={() => updateQuantity(item.productId, -1)}>-</Button>
-                        <span className="font-bold w-4 text-center">{item.quantity}</span>
-                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-none" onClick={() => updateQuantity(item.productId, 1)}>+</Button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-bold w-4 text-center ml-2">×{item.quantity}</span>
-                      </>
-                    )}
-                  </div>
-                  <span className="font-bold text-gray-600 dark:text-gray-400">
-                    ₹{((item.price || 0) * item.quantity).toLocaleString('en-IN', {minimumFractionDigits: 2})}
-                  </span>
-                </div>
-              </div>
-            ))}
-            {(calculation?.items || cartItems).length === 0 && <p className="text-gray-400 italic">No products added.</p>}
-          </div>
-        </div>
-
-        {/* Customer Context for Taxes & Shipping */}
-        <div className="space-y-6">
-          <h2 className="text-xl font-bold tracking-tight">Customer Location</h2>
-          <hr className="border-gray-200 dark:border-gray-800" />
-          <div className="grid grid-cols-2 gap-4">
-             <div>
-                <label className="text-sm font-bold">Country</label>
-                <Input value={country} onChange={e => setCountry(e.target.value)} placeholder="e.g. India" />
-             </div>
-             <div>
-                <label className="text-sm font-bold">State / Region</label>
-                <Input value={state} onChange={e => setState(e.target.value)} placeholder="e.g. Gujarat" />
-             </div>
-             <div>
-                <label className="text-sm font-bold">City</label>
-                <Input value={city} onChange={e => setCity(e.target.value)} placeholder="e.g. Surat" />
-             </div>
-             <div>
-                <label className="text-sm font-bold">PIN / Postal Code</label>
-                <Input value={postalCode} onChange={e => setPostalCode(e.target.value)} placeholder="e.g. 395007" />
-             </div>
-             <div className="col-span-2">
-                <Button variant="outline" className="w-full" onClick={calculateCart}>Apply Location Rules</Button>
-             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: Order Summary */}
-      <div className="space-y-6 bg-gray-50 dark:bg-gray-900/30 p-6 rounded-lg border border-gray-100 dark:border-gray-800">
-        <h2 className="text-2xl font-bold tracking-tight">Order Summary</h2>
-        <hr className="border-gray-200 dark:border-gray-800" />
-        
-        <div className="space-y-4 text-lg">
-          <div className="flex justify-between">
-            <span className="text-gray-600 dark:text-gray-400">Subtotal</span>
-            <span className="font-semibold">₹{(calculation?.pricing?.subtotal || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-          </div>
-
-          <div className="pt-2">
-            <span className="text-gray-600 dark:text-gray-400">Discount:</span>
-            {calculation?.pricing?.appliedDiscounts?.length > 0 ? (
-              <div className="mt-2 space-y-2">
-                {calculation.pricing.appliedDiscounts.map((ad: any, i: number) => {
-                  const amt = ad.amount !== undefined ? ad.amount : (ad.discountAmount || 0);
+            {cart.lines.length === 0 ? (
+              <EmptyState icon={ShoppingCart01Icon} title="Your cart is empty" description="Search for a product above to add it." />
+            ) : (
+              <div className={cn('divide-y', calculating && 'opacity-70 transition-opacity')}>
+                {cart.lines.map((line) => {
+                  const key = lineKey(line);
+                  const product = products[line.productId];
+                  const item = priced(line);
+                  const variants = product?.variants ?? [];
+                  const stockIssue = stockIssues.find((s) => s.productId === line.productId && (s.variantId ?? '') === (line.variantId ?? ''));
+                  const display: OrderItem = item ?? {
+                    productId: line.productId,
+                    variantId: line.variantId,
+                    name: product?.name ?? 'Loading…',
+                    sku: product?.sku,
+                    price: product?.pricing?.catalogPrice ?? product?.price ?? 0,
+                    quantity: line.quantity,
+                  };
                   return (
-                  <div key={i} className="flex flex-col gap-1">
-                    <div className="flex justify-between font-medium">
-                      <span>{ad.name}</span>
-                      <span>-₹{amt.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                    </div>
-                    {ad.isFreeGift && ad.rewardProductName && (
-                      <span className="text-sm text-green-600">Free {ad.rewardProductName} (Qty: {ad.rewardQuantity})</span>
-                    )}
-                  </div>
+                    <LineItem
+                      key={key}
+                      item={{ ...display, quantity: line.quantity }}
+                      image={product?.images?.[0]}
+                      controls={
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {variants.length > 0 && (
+                            <SelectField
+                              id={`variant-${key}`}
+                              value={line.variantId ?? ''}
+                              options={variants.map((v) => ({ value: String(v._id), label: `${variantLabel(v)} · ${v.stock ?? 0} in stock` }))}
+                              onChange={(v) => updateLine(key, { variantId: v })}
+                              className="h-7 w-auto min-w-40"
+                            />
+                          )}
+                          <div className="flex items-center rounded-md border">
+                            <Button variant="ghost" size="icon-sm" className="rounded-none rounded-l-md" aria-label="Decrease quantity" onClick={() => updateLine(key, { quantity: line.quantity - 1 })}>
+                              <HugeiconsIcon icon={MinusSignIcon} strokeWidth={2} />
+                            </Button>
+                            <input
+                              aria-label="Quantity"
+                              inputMode="numeric"
+                              value={line.quantity}
+                              onChange={(e) => {
+                                const n = Math.floor(Number(e.target.value));
+                                if (Number.isFinite(n) && n >= 1) updateLine(key, { quantity: Math.min(1000, n) });
+                              }}
+                              className="h-7 w-10 border-x bg-transparent text-center text-[13px] tabular-nums outline-none"
+                            />
+                            <Button variant="ghost" size="icon-sm" className="rounded-none rounded-r-md" aria-label="Increase quantity" onClick={() => updateLine(key, { quantity: line.quantity + 1 })}>
+                              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+                            </Button>
+                          </div>
+                          <Button variant="ghost" size="icon-sm" className="rounded-md text-muted-foreground hover:text-destructive" aria-label={`Remove ${display.name}`} onClick={() => updateLine(key, { quantity: 0 })}>
+                            <HugeiconsIcon icon={Delete02Icon} strokeWidth={2} />
+                          </Button>
+                          {stockIssue && <span className="text-xs text-destructive">Only {stockIssue.available} in stock</span>}
+                        </div>
+                      }
+                    />
                   );
                 })}
-              </div>
-            ) : (
-              <div className="flex justify-between font-medium mt-2">
-                <span>None</span>
-                <span>-₹0.00</span>
+                {giftLines.map((g, i) => (
+                  <LineItem key={`gift-${i}`} item={g} image={products[String(g.productId)]?.images?.[0]} />
+                ))}
               </div>
             )}
-          </div>
+          </SectionCard>
 
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-gray-600 dark:text-gray-400">Coupon Code</span>
-            <div className="flex gap-2 w-1/2">
-              <Input className="h-8 text-sm" placeholder="Code..." value={couponCode} onChange={e => setCouponCode(e.target.value)} />
-              <Button size="sm" className="h-8" onClick={calculateCart}>Apply</Button>
-            </div>
-          </div>
+          <SectionCard title="Customer" bodyClassName="grid gap-4 p-5 sm:grid-cols-2">
+            <Field id="name" label="Name" error={errors.name}>
+              <TextInput id="name" value={cart.customer.name} error={errors.name} onChange={(e) => setCustomer({ name: e.target.value })} />
+            </Field>
+            <Field id="email" label="Email" error={errors.email}>
+              <TextInput id="email" type="email" value={cart.customer.email} error={errors.email} onChange={(e) => setCustomer({ email: e.target.value })} />
+            </Field>
+            <Field id="phone" label="Phone" optional>
+              <TextInput id="phone" type="tel" value={cart.customer.phone} onChange={(e) => setCustomer({ phone: e.target.value })} />
+            </Field>
+          </SectionCard>
 
-          <div className="flex justify-between pt-2">
-            <span className="text-gray-600 dark:text-gray-400">Shipping</span>
-            <span className="font-semibold">₹{(calculation?.pricing?.shipping || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-          </div>
+          <SectionCard title="Shipping address" description="Used for shipping and tax rules." bodyClassName="space-y-4 p-5">
+            <AddressFields
+              idPrefix="ship"
+              line1Label="Address"
+              errors={{ addressLine1: errors.addressLine1 }}
+              value={{
+                addressLine1: cart.address.addressLine1 ?? '',
+                addressLine2: cart.address.addressLine2 ?? '',
+                city: cart.address.city ?? '',
+                state: cart.address.state ?? '',
+                postalCode: cart.address.postalCode ?? '',
+                country: cart.address.country ?? '',
+              }}
+              onChange={setAddress}
+            />
+            {locations.length > 0 && (
+              <Field id="location" label="Ship from" hint="Locations that can deliver to this address, nearest first.">
+                <SelectField
+                  id="location"
+                  value={cart.locationId || String(locations[0].locationId)}
+                  options={locations.map((l) => ({ value: String(l.locationId), label: `${l.name} · ${l.distanceKm.toFixed(1)} km · ${formatMoney(l.shippingCost)}` }))}
+                  onChange={(v) => setCart({ locationId: v })}
+                />
+              </Field>
+            )}
+          </SectionCard>
+        </div>
 
-          
-          {/* Tax Section */}
-          <div className="flex flex-col gap-2 pt-4 border-t border-gray-200 dark:border-gray-800">
-            {calculation?.pricing?.taxSnapshot?.configurationErrors?.length > 0 && (
-                <div className="bg-red-50 text-red-600 border border-red-200 p-3 rounded-md text-sm font-semibold mb-2 space-y-1">
-                    {calculation.pricing.taxSnapshot.configurationErrors.map((err: string, i: number) => (
-                        <p key={i}>?? {err}</p>
+        <div className="min-w-0">
+          <div className="space-y-4 lg:sticky lg:top-4">
+            <SectionCard title="Summary" description={calculating ? 'Recalculating…' : undefined}>
+              <form
+                className="flex gap-2 border-b px-5 py-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setCart({ coupon: couponValue.trim() });
+                  setCouponDraft(null);
+                }}
+              >
+                <TextInput id="coupon" aria-label="Discount code" placeholder="Discount code" value={couponValue} onChange={(e) => setCouponDraft(e.target.value)} className="uppercase" />
+                {cart.coupon && couponValue.trim().toLowerCase() === cart.coupon.toLowerCase() ? (
+                  <Button type="button" variant="outline" size="sm" className="h-8 rounded-md" onClick={() => { setCart({ coupon: '' }); setCouponDraft(''); }}>
+                    Remove
+                  </Button>
+                ) : (
+                  <Button type="submit" variant="outline" size="sm" className="h-8 rounded-md" disabled={!couponValue.trim()}>
+                    Apply
+                  </Button>
+                )}
+              </form>
+
+              <div className="space-y-3 px-5 py-4">
+                {cart.lines.length === 0 ? (
+                  <p className="text-[13px] text-muted-foreground">Add items to see discounts, shipping and tax.</p>
+                ) : calc?.error && !calcCurrent?.data ? (
+                  <InlineError message={calc.error} />
+                ) : lastData ? (
+                  <PricingBreakdown pricing={lastData.pricing} />
+                ) : (
+                  <p className="text-[13px] text-muted-foreground">Calculating…</p>
+                )}
+
+                {(lastData?.pricing.progressNotices?.length ?? 0) > 0 && (
+                  <ul className="space-y-1 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-200">
+                    {lastData!.pricing.progressNotices!.map((n, i) => (
+                      <li key={i}>{n}</li>
                     ))}
-                </div>
-            )}
-            <div className="flex justify-between">
+                  </ul>
+                )}
+                {(lastData?.pricing.taxSnapshot?.configurationErrors?.length ?? 0) > 0 && (
+                  <ul className="space-y-1 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                    {lastData!.pricing.taxSnapshot!.configurationErrors!.map((n, i) => (
+                      <li key={i}>{n}</li>
+                    ))}
+                  </ul>
+                )}
+                {lastData?.pricing.shippingSnapshot?.error && (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Shipping: {lastData.pricing.shippingSnapshot.error}</p>
+                )}
+                {stockIssues.length > 0 && <InlineError message="Some items don't have enough stock. Lower the quantity to place the order." />}
+                {placeError && <InlineError message={placeError} />}
 
-              <span className="text-gray-600 dark:text-gray-400">Tax</span>
-              <span className="font-semibold">₹{(calculation?.pricing?.tax || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-            </div>
-            {calculation?.pricing?.taxSnapshot?.taxLines?.length > 0 && (
-                <div className="pl-4 space-y-1 mt-1 border-l-2 border-gray-200 dark:border-gray-700">
-                   {calculation.pricing.taxSnapshot.taxLines.map((line: any, idx: number) => (
-                      <div key={idx} className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-                          <span>{line.label} {line.rate}%</span>
-                          <span>₹{(line.taxAmount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-                      </div>
-                   ))}
-                </div>
-            )}
+                <Button
+                  className="h-9 w-full rounded-md"
+                  disabled={placing || cart.lines.length === 0 || calculating || stockIssues.length > 0 || !calcCurrent?.data}
+                  onClick={place}
+                >
+                  {placing ? 'Placing order…' : lastData && cart.lines.length ? `Place order · ${formatMoney(lastData.pricing.totalAmount)}` : 'Place order'}
+                </Button>
+                <p className="text-xs text-muted-foreground">Creates a real order (marked “Admin cart”) and reduces stock. You can cancel it from the order page.</p>
+              </div>
+            </SectionCard>
           </div>
-        </div>
-
-        <hr className="border-gray-200 dark:border-gray-800 my-6" />
-
-        <div className="space-y-2">
-          <div className="flex justify-between font-bold text-2xl tracking-tight">
-            <span>TOTAL</span>
-            <span>₹{(calculation?.pricing?.totalAmount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-          </div>
-          
-          <div className="flex justify-between font-bold text-xl text-green-600 dark:text-green-500">
-            <span>YOU SAVED</span>
-            <span>₹{(calculation?.pricing?.discount || 0).toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>
-          </div>
-        </div>
-
-        <div className="flex gap-4 pt-6">
-          <Button variant="outline" className="flex-1 font-bold h-12" onClick={calculateCart}>Recalculate</Button>
-          <Button className="flex-1 font-bold h-12" onClick={() => alert("Checkout clicked! In a real app, this redirects to payment.")}>Checkout</Button>
         </div>
       </div>
-      
+      {dialog}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <AdminToaster>
+      <CartPage />
+    </AdminToaster>
   );
 }

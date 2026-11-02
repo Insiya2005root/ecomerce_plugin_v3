@@ -1,5 +1,6 @@
 ﻿import Settings from '../models/Settings';
 import Location from '../models/Location';
+import { pinCoordinates } from './GeoLookup';
 const https = require('https');
 
 export class ShippingService {
@@ -74,7 +75,14 @@ export class ShippingService {
 
         // Distance Based
         const LocationModel = Location.getModel();
-        const activeLocations = await LocationModel.find({ tenantId: 'default_tenant', status: 'Active' });
+        const allActive = await LocationModel.find({ tenantId: 'default_tenant', status: 'Active' });
+        // Settings → Shipping can pin one store as the origin (read raw: older cached schemas drop the field).
+        const rawSettings = await SettingsModel.collection.findOne({ tenantId: 'default_tenant' }, { projection: { shipFromLocationId: 1 } });
+        const fixedOrigin = rawSettings?.shipFromLocationId
+            ? allActive.find((l: any) => String(l._id) === String(rawSettings.shipFromLocationId) && l.latitude && l.longitude)
+            : null;
+        const activeLocations = fixedOrigin ? [fixedOrigin] : allActive;
+        const locationSelection = fixedOrigin ? 'Nearest' : settings.locationSelection;
         
         let destinationCoords = null;
         let customerAddressStr = '';
@@ -82,6 +90,8 @@ export class ShippingService {
         if (reqBody.customerAddress) {
             customerAddressStr = `${reqBody.customerAddress.addressLine1 || ''} ${reqBody.customerAddress.addressLine2 || ''} ${reqBody.customerAddress.city || ''} ${reqBody.customerAddress.state || ''} ${reqBody.customerAddress.postalCode || ''} ${reqBody.customerAddress.country || 'India'}`.trim();
             destinationCoords = await this.geocodeAddress(customerAddressStr);
+            // Street addresses often aren't on the map; the PIN code's centre is a good stand-in.
+            if (!destinationCoords) destinationCoords = await pinCoordinates(reqBody.customerAddress.postalCode);
         }
 
         let finalAmount = settings.fallbackShippingCost || 0;
@@ -98,7 +108,7 @@ export class ShippingService {
         }
 
         // Customer Selects Mode -> Provide list of locations with distance
-        if (settings.locationSelection === 'CustomerSelect') {
+        if (locationSelection === 'CustomerSelect') {
             const availableLocations = [];
             for (let loc of activeLocations) {
                 if (loc.latitude && loc.longitude) {

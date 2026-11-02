@@ -57,3 +57,10 @@ plugin/temp_check/
 plugin/ecommerce-plugin/dbcheck.js
 plugin/ecommerce-plugin/test-api.js
 plugin/ecommerce-plugin/test-osrm*.js
+# Build output (regenerate with: cd web && npm run build && npm run package:plugin)
+web/out/
+plugin/ecommerce-plugin/ui/admin/
+*.zip
+
+# Old scratch copy
+temp-check/

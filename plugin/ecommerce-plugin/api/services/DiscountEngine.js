@@ -28,8 +28,54 @@ class DiscountEngine {
             discountPercentage,
         };
     }
+    /**
+     * Applies the active rules to a cart. Rules marked `stackingPolicy: 'exclusive'` never combine with others:
+     * the cart is priced with each exclusive rule on its own and with all stackable rules together, and the
+     * customer gets whichever gives the larger discount. Without exclusive rules this is a single pass.
+     */
     static async evaluate(cart, rules) {
+        const isExclusive = (r) => r.type !== 'campaign' && r.stackingPolicy === 'exclusive';
+        const exclusive = rules.filter(isExclusive);
+        if (exclusive.length === 0)
+            return this.evaluateRuleSet(cart, rules);
+        const campaigns = rules.filter((r) => r.type === 'campaign');
+        let best = await this.evaluateRuleSet(cart, rules.filter((r) => !isExclusive(r)));
+        for (const rule of exclusive) {
+            // Campaign parents are kept so a campaign can still activate its exclusive child rule.
+            const candidate = await this.evaluateRuleSet(cart, [...campaigns, rule]);
+            if (candidate.discountTotal > best.discountTotal + 0.000001 || this.hasFreeShipping(candidate) && !this.hasFreeShipping(best) && candidate.discountTotal >= best.discountTotal) {
+                best = candidate;
+            }
+        }
+        return best;
+    }
+    static hasFreeShipping(result) {
+        return (result.appliedDiscounts || []).some((d) => d.isFreeShipping);
+    }
+    /** Scales one rule's price reductions down so they total at most `cap`; returns the capped total. */
+    static capRule(items, before, rule, cap) {
+        let measured = 0;
+        for (const item of items) {
+            const start = before.has(item) ? before.get(item) : Number(item.price) || 0;
+            measured += Math.max(0, start - item.remainingPrice) * item.quantity;
+        }
+        if (measured <= cap)
+            return measured;
+        const factor = measured > 0 ? cap / measured : 0;
+        for (const item of items) {
+            const start = before.has(item) ? before.get(item) : Number(item.price) || 0;
+            const reduction = Math.max(0, start - item.remainingPrice);
+            item.remainingPrice = start - reduction * factor;
+            for (const d of item.appliedDiscounts || []) {
+                if (String(d.ruleId) === String(rule._id))
+                    d.amount = d.amount * factor;
+            }
+        }
+        return cap;
+    }
+    static async evaluateRuleSet(cart, rules) {
         const Product = require('../models/Product').getModel();
+        const { CustomDiscountEvaluator } = require('./CustomDiscountEvaluator');
         let subtotal = cart.items.reduce((sum, item) => sum + (item.originalPrice * item.quantity), 0); // Base off original subtotal for eligibility
         // Wait, cart.items passed by cart.ts has price (after native discount) and originalPrice.
         // Let's use item.price for evaluations.
@@ -74,7 +120,9 @@ class DiscountEngine {
             const activatedByCampaign = allChildIdsInCampaigns.has(ruleIdStr) && ruleToActiveCampaign.get(ruleIdStr);
             const passedCode2 = (cart.couponCode || '').trim().toLowerCase();
             const ruleCode2 = (rule.code || '').trim().toLowerCase();
-            if (!rule.isAutomatic && ruleCode2 !== passedCode2 && !activatedByCampaign)
+            // Custom rules are condition-driven, so they apply automatically unless they were given a code.
+            const automatic = rule.isAutomatic || (rule.type === 'custom' && !ruleCode2);
+            if (!automatic && ruleCode2 !== passedCode2 && !activatedByCampaign)
                 return false;
             if (rule.startDate && new Date(rule.startDate) > now)
                 return false;
@@ -91,13 +139,19 @@ class DiscountEngine {
             remainingPrice: i.price,
             appliedDiscounts: []
         }));
+        // Higher priority first (default 0 keeps the previous order), then product-specific rules before store-wide ones.
         validRules.sort((a, b) => {
+            const byPriority = (Number(b.priority) || 0) - (Number(a.priority) || 0);
+            if (byPriority !== 0)
+                return byPriority;
             const aSpecific = a.targetProductIds && a.targetProductIds.length > 0 ? 1 : 0;
             const bSpecific = b.targetProductIds && b.targetProductIds.length > 0 ? 1 : 0;
             return bSpecific - aSpecific;
         });
         for (const rule of validRules) {
             let ruleTotalAmount = 0;
+            let ruleFreeShipping = false;
+            const priceBeforeRule = new Map(items.map((i) => [i, i.remainingPrice]));
             if (rule.type === 'percentage') {
                 for (const item of items) {
                     if (rule.targetProductIds && rule.targetProductIds.length > 0 && !rule.targetProductIds.includes(String(item.productId))) {
@@ -400,7 +454,22 @@ class DiscountEngine {
                     progressNotices.push(`Spend ₹${short.toFixed(2)} more to unlock a discount!`);
                 }
             }
-            if (ruleTotalAmount > 0) {
+            else if (rule.type === 'custom') {
+                const config = rule.customConfig || {};
+                const city = cart.customerAddress?.city ? String(cart.customerAddress.city) : '';
+                const passes = CustomDiscountEvaluator.evaluateConditions(config.conditionTree, { items, evaluationSubtotal, city });
+                if (passes && Array.isArray(config.actions) && config.actions.length > 0) {
+                    const outcome = await CustomDiscountEvaluator.executeActions(config.actions, items, rule, Product);
+                    ruleTotalAmount += outcome.ruleTotalAmount;
+                    ruleFreeShipping = Boolean(outcome.meta?.isFreeShipping);
+                    progressNotices.push(...(outcome.progressNotices || []));
+                }
+            }
+            const cap = Number(rule.maxDiscountAmount);
+            if (Number.isFinite(cap) && cap > 0 && ruleTotalAmount > cap) {
+                ruleTotalAmount = this.capRule(items, priceBeforeRule, rule, cap);
+            }
+            if (ruleTotalAmount > 0 || ruleFreeShipping) {
                 discountTotal += ruleTotalAmount;
                 let rewardProductId;
                 let rewardQuantity = 0;
@@ -444,6 +513,9 @@ class DiscountEngine {
                     md.originalPrice = originalPrice;
                 if (isFreeGift)
                     md.isFreeGift = isFreeGift;
+                // ShippingService reads this flag and charges no shipping.
+                if (ruleFreeShipping)
+                    md.isFreeShipping = true;
                 appliedDiscounts.push(md);
             }
         }

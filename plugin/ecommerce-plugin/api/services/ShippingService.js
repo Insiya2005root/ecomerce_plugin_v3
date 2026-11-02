@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ShippingService = void 0;
 const Settings_1 = __importDefault(require("../models/Settings"));
 const Location_1 = __importDefault(require("../models/Location"));
+const GeoLookup_1 = require("./GeoLookup");
 const https = require('https');
 class ShippingService {
     static async geocodeAddress(addressStr) {
@@ -81,12 +82,22 @@ class ShippingService {
         }
         // Distance Based
         const LocationModel = Location_1.default.getModel();
-        const activeLocations = await LocationModel.find({ tenantId: 'default_tenant', status: 'Active' });
+        const allActive = await LocationModel.find({ tenantId: 'default_tenant', status: 'Active' });
+        // Settings → Shipping can pin one store as the origin (read raw: older cached schemas drop the field).
+        const rawSettings = await SettingsModel.collection.findOne({ tenantId: 'default_tenant' }, { projection: { shipFromLocationId: 1 } });
+        const fixedOrigin = rawSettings?.shipFromLocationId
+            ? allActive.find((l) => String(l._id) === String(rawSettings.shipFromLocationId) && l.latitude && l.longitude)
+            : null;
+        const activeLocations = fixedOrigin ? [fixedOrigin] : allActive;
+        const locationSelection = fixedOrigin ? 'Nearest' : settings.locationSelection;
         let destinationCoords = null;
         let customerAddressStr = '';
         if (reqBody.customerAddress) {
             customerAddressStr = `${reqBody.customerAddress.addressLine1 || ''} ${reqBody.customerAddress.addressLine2 || ''} ${reqBody.customerAddress.city || ''} ${reqBody.customerAddress.state || ''} ${reqBody.customerAddress.postalCode || ''} ${reqBody.customerAddress.country || 'India'}`.trim();
             destinationCoords = await this.geocodeAddress(customerAddressStr);
+            // Street addresses often aren't on the map; the PIN code's centre is a good stand-in.
+            if (!destinationCoords)
+                destinationCoords = await (0, GeoLookup_1.pinCoordinates)(reqBody.customerAddress.postalCode);
         }
         let finalAmount = settings.fallbackShippingCost || 0;
         let snapshot = {
@@ -100,7 +111,7 @@ class ShippingService {
             return { amount: finalAmount, snapshot: { ...snapshot, error: 'No locations or invalid destination' } };
         }
         // Customer Selects Mode -> Provide list of locations with distance
-        if (settings.locationSelection === 'CustomerSelect') {
+        if (locationSelection === 'CustomerSelect') {
             const availableLocations = [];
             for (let loc of activeLocations) {
                 if (loc.latitude && loc.longitude) {

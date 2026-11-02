@@ -1,142 +1,210 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Button, buttonVariants } from "@/components/ui/button";
-// No lucide-react
 
-export default function CategoriesPage() {
-  const [categories, setCategories] = useState<any[]>([]);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-  const [viewCategory, setViewCategory] = useState<any | null>(null);
+import * as React from 'react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Add01Icon, Delete02Icon, Edit02Icon, FolderTreeIcon, Search01Icon } from '@hugeicons/core-free-icons';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ActionMenu } from '@/components/admin/ActionMenu';
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
+import { useConfirm } from '@/components/admin/ConfirmDialog';
+import { EmptyState, ErrorState } from '@/components/admin/StateViews';
+import { AdminToaster, toast } from '@/components/admin/toast';
+import { controlClass } from '@/components/admin/fields';
+import { CategoryDrawer } from '@/components/categories/CategoryDrawer';
+import { flattenCategoryTree } from '@/components/categories/categoryTree';
+import { useProductListHref } from '@/components/products/useProductListHref';
+import { deleteCategory, listCategories } from '@/lib/products/api';
+import { categoryPath } from '@/lib/products/form';
+import type { Category } from '@/lib/products/types';
+import { categoryUrls } from '@/lib/products/urls';
+import { cn } from '@/lib/utils';
 
-  useEffect(() => {
-    fetch('/api/plugins/ecommerce-plugin/categories?t=' + Date.now())
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setCategories(data.categories);
-      });
-  }, []);
+type DrawerState = { open: boolean; category: Category | null; parentId: string | null };
+const CLOSED: DrawerState = { open: false, category: null, parentId: null };
 
-    const handleDelete = async (id: string) => {
-    try {
-      const res = await fetch(`/api/plugins/ecommerce-plugin/categories/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        setCategories(categories.filter(c => c._id !== id));
-      } else {
-        alert(data.message);
-      }
-    } catch (err) {
-      alert("Failed to delete category");
-    }
-    setDeleteConfirm(null);
+function CategoriesList() {
+  const productsHref = useProductListHref();
+  const [categories, setCategories] = React.useState<Category[]>([]);
+  const [status, setStatus] = React.useState<{ loading: boolean; error: string | null }>({ loading: true, error: null });
+  const [attempt, setAttempt] = React.useState(0);
+  const [search, setSearch] = React.useState('');
+  const [drawer, setDrawer] = React.useState<DrawerState>(CLOSED);
+  const { confirm, dialog } = useConfirm();
+
+  React.useEffect(() => {
+    let active = true;
+    listCategories()
+      .then((cats) => {
+        if (!active) return;
+        setCategories(cats);
+        setStatus({ loading: false, error: null });
+      })
+      .catch((err) => active && setStatus({ loading: false, error: err instanceof Error ? err.message : 'Could not load categories.' }));
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+
+  const reload = () => {
+    setStatus({ loading: true, error: null });
+    setAttempt((n) => n + 1);
   };
 
-  const buildTree = (parentId: string | null = null, level: number = 0): any[] => {
-    return categories
-      .filter(c => (c.parentId || null) === parentId)
-      .flatMap(c => [{ ...c, level }, ...buildTree(c._id, level + 1)]);
-  };
+  const tree = React.useMemo(() => flattenCategoryTree(categories), [categories]);
+  const query = search.trim().toLowerCase();
+  // While searching, show matches flat with their full path so the hierarchy stays readable.
+  const rows = query
+    ? tree.filter((c) => c.name.toLowerCase().includes(query) || (c.slug ?? '').includes(query)).map((c) => ({ ...c, depth: 0 }))
+    : tree;
 
-  const treeCategories = buildTree(null, 0);
+  const remove = (c: Category) =>
+    confirm({
+      title: 'Delete category?',
+      description: (
+        <>
+          <span className="font-medium text-foreground">{c.name}</span> will be permanently deleted. Categories that still have
+          subcategories or products can’t be deleted.
+        </>
+      ),
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        try {
+          await deleteCategory(String(c._id));
+          setCategories((list) => list.filter((x) => x._id !== c._id));
+          toast.success('Category deleted', c.name);
+        } catch (err) {
+          toast.error('Could not delete category', err instanceof Error ? err.message : undefined);
+        }
+      },
+    });
 
   return (
-    <div className="p-2 space-y-8">
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-3xl font-bold uppercase tracking-tight">Categories</h2>
-          <p className="text-muted-foreground font-semibold mt-1">Manage product categories.</p>
+    <div className="space-y-5">
+      <AdminPageHeader
+        breadcrumbs={[{ label: 'Products', href: productsHref }, { label: 'Categories' }]}
+        title="Categories"
+        description="Organise products into a category tree for navigation and filtering."
+        actions={
+          <Button size="sm" className="rounded-md" onClick={() => setDrawer({ open: true, category: null, parentId: null })}>
+            <HugeiconsIcon icon={Add01Icon} strokeWidth={2} data-icon="inline-start" />
+            Create
+          </Button>
+        }
+      />
+
+      <div className="overflow-hidden rounded-lg border bg-card shadow-xs">
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <div className="relative w-full sm:w-64">
+            <HugeiconsIcon icon={Search01Icon} strokeWidth={2} className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              aria-label="Search categories"
+              placeholder="Search categories"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={cn(controlClass, 'pl-8')}
+            />
+          </div>
         </div>
-        
-          <a href="/plugins/ecommerce-plugin/ui/admin/categories/add/index.html">
-            <span>+</span>
-            Add Category
-          </a>
-      </div>
-      
-      <div className="border rounded-md bg-card">
-                  <Table>
+
+        {status.error ? (
+          <ErrorState message={status.error} onRetry={reload} />
+        ) : status.loading ? (
+          <div className="space-y-3 p-4" aria-busy="true">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-5 rounded" style={{ marginLeft: `${(i % 3) * 16}px` }} />
+            ))}
+          </div>
+        ) : categories.length === 0 ? (
+          <EmptyState
+            icon={FolderTreeIcon}
+            title="No categories yet"
+            description="Products need a category. Create your first one, e.g. “Apparel”."
+            action={
+              <Button size="sm" className="rounded-md" onClick={() => setDrawer({ open: true, category: null, parentId: null })}>
+                Create category
+              </Button>
+            }
+          />
+        ) : rows.length === 0 ? (
+          <EmptyState icon={Search01Icon} title="No categories match your search" />
+        ) : (
+          <Table className="text-[13px]">
             <TableHeader>
-              <TableRow>
-                <TableHead className="font-bold uppercase text-xs">Name</TableHead>
-                <TableHead className="font-bold uppercase text-xs">Products</TableHead>
-                <TableHead className="font-bold uppercase text-xs">Slug</TableHead>
-                <TableHead className="text-right font-bold uppercase text-xs">Actions</TableHead>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="h-9 pl-4 text-xs font-medium text-muted-foreground">Name</TableHead>
+                <TableHead className="h-9 text-xs font-medium text-muted-foreground">Handle</TableHead>
+                <TableHead className="h-9 text-xs font-medium text-muted-foreground">Products</TableHead>
+                <TableHead className="hidden h-9 text-xs font-medium text-muted-foreground sm:table-cell">Subcategories</TableHead>
+                <TableHead className="h-9 w-12 pr-4"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {treeCategories.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="h-24 text-center text-muted-foreground font-semibold">No categories found.</TableCell>
-                </TableRow>
-              )}
-              {treeCategories.map(cat => (
-                <TableRow key={cat._id}>
-                  <TableCell className="font-bold text-base">
-                    <div className="flex items-center" style={{ paddingLeft: `${cat.level * 2}rem` }}>
-                      {cat.level > 0 && <span className="text-muted-foreground mr-2 font-light">└─ </span>}
-                      {cat.name}
+              {rows.map((c) => (
+                <TableRow
+                  key={c._id}
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('a,button,[role="menu"]')) return;
+                    window.location.href = categoryUrls.detail(String(c._id));
+                  }}
+                >
+                  <TableCell className="py-2.5 pl-4">
+                    <div className="flex items-center gap-1.5" style={{ paddingLeft: `${c.depth * 20}px` }}>
+                      {c.depth > 0 && <span aria-hidden className="text-muted-foreground/60">└</span>}
+                      <a href={categoryUrls.detail(String(c._id))} className="font-medium hover:underline">
+                        {query ? categoryPath(String(c._id), categories) : c.name}
+                      </a>
                     </div>
                   </TableCell>
-                  <TableCell>
-                    {cat.productCount > 0 ? (
-                      <span className="bg-primary/10 text-primary px-2 py-1 rounded-full text-xs font-bold">{cat.productCount} item(s)</span>
-                    ) : (
-                      <span className="text-muted-foreground text-xs font-semibold">0 items</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-mono text-muted-foreground">{cat.slug}</TableCell>
-                  <TableCell className="text-right">
-                    {deleteConfirm === cat._id ? (
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="destructive" size="sm" onClick={() => handleDelete(cat._id)}>Confirm</Button>
-                        <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setViewCategory(cat)}>View</Button>
-                        <a href={`/plugins/ecommerce-plugin/ui/admin/categories/edit/index.html?id=${cat._id}`} className={buttonVariants({variant: "outline", size: "sm"})}>Edit</a>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => setDeleteConfirm(cat._id)}>Delete</Button>
-                      </div>
-                    )}
+                  <TableCell className="py-2.5 font-mono text-xs text-muted-foreground">/{c.slug}</TableCell>
+                  <TableCell className="py-2.5 tabular-nums">{c.productCount ?? 0}</TableCell>
+                  <TableCell className="hidden py-2.5 tabular-nums text-muted-foreground sm:table-cell">{c.childCount || '—'}</TableCell>
+                  <TableCell className="py-2.5 pr-4 text-right">
+                    <ActionMenu
+                      label={`Actions for ${c.name}`}
+                      groups={[
+                        [
+                          { label: 'Edit', icon: Edit02Icon, onSelect: () => setDrawer({ open: true, category: c, parentId: null }) },
+                          { label: 'Add subcategory', icon: Add01Icon, onSelect: () => setDrawer({ open: true, category: null, parentId: String(c._id) }) },
+                        ],
+                        [{ label: 'Delete', icon: Delete02Icon, destructive: true, onSelect: () => remove(c) }],
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-              </div>
-        <Dialog open={!!viewCategory} onOpenChange={(open) => !open && setViewCategory(null)}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="uppercase tracking-tight text-xl">{viewCategory?.name} - Hierarchy</DialogTitle>
-              <DialogDescription>Full subcategory tree</DialogDescription>
-            </DialogHeader>
-            <div className="pt-4 space-y-2 max-h-96 overflow-y-auto">
-              {viewCategory && buildTree(viewCategory._id, 1).map((sub: any) => (
-                <div key={sub._id} style={{ paddingLeft: `${sub.level}rem` }} className="flex items-center gap-2 py-1 border-b last:border-0 border-border/50">
-                  <span className="text-muted-foreground">?</span>
-                  <span className="font-semibold">{sub.name}</span>
-                </div>
-              ))}
-              {viewCategory && buildTree(viewCategory._id, 1).length === 0 && (
-                <div className="text-muted-foreground text-sm italic">No subcategories.</div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
+        )}
       </div>
-    );
 
-
-
-
-
-
+      <CategoryDrawer
+        open={drawer.open}
+        category={drawer.category}
+        defaultParentId={drawer.parentId}
+        categories={categories}
+        onClose={() => setDrawer(CLOSED)}
+        onSaved={(saved) => {
+          const editing = Boolean(drawer.category);
+          setDrawer(CLOSED);
+          toast.success(editing ? 'Category saved' : 'Category created', saved.name);
+          reload();
+        }}
+      />
+      {dialog}
+    </div>
+  );
 }
 
-
-
-
-
-
+export default function CategoriesPage() {
+  return (
+    <AdminToaster>
+      <CategoriesList />
+    </AdminToaster>
+  );
+}

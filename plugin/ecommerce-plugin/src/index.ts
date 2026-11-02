@@ -55,17 +55,31 @@ export = {
     await require('./models/Location').register(cms);
     await require('./models/DiscountRule').register(cms);
     await require('./models/StorefrontPage').register(cms);
+    await require('./models/Collection').register(cms);
+    await require('./models/AdminProfile').register(cms);
+    await require('./models/Inventory').register(cms);
 
     require('./routes/products')(app);
     require('./routes/categories')(app);
+    require('./routes/collections')(app);
+    require('./routes/dashboard')(app);
     require('./routes/settings')(app);
     require('./routes/taxes')(app);
     require('./routes/locations')(app);
     require('./routes/cart')(app);
     require('./routes/checkout')(app);
     require('./routes/orders')(app);
+    require('./routes/customers')(app);
+    require('./routes/inventory')(app);
     require('./routes/discounts')(app);
     require('./routes/storefront')(app);
+
+    // Products created before inventory existed get their inventory items (stock moves to the primary location).
+    try {
+      await require('./services/InventoryService').InventoryService.syncAll();
+    } catch (err) {
+      cms.logger?.warn?.('Inventory sync failed; it will be retried on the next start.', err);
+    }
 
     try {
       const { StorefrontBlueprintService } = require('./services/StorefrontBlueprintService');

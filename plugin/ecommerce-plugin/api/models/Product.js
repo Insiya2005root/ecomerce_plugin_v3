@@ -27,6 +27,7 @@ module.exports = {
             images: [{ type: String }],
             videos: [{ type: String }],
             categoryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: true },
+            collectionId: { type: mongoose.Schema.Types.ObjectId, ref: 'EcommerceCollection' },
             status: { type: String, enum: ['Draft', 'Published', 'Archived'], default: 'Published' },
             isTaxable: { type: Boolean, default: true },
             taxClassId: { type: String, default: 'Default' },

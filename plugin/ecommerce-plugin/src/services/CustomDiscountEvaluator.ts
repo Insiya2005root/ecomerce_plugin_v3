@@ -109,7 +109,8 @@
         
       case 'Location':
         if (!city) return false;
-        if (cond.locationField === 'City') {
+        // The original builder never stored locationField; City is the only supported field.
+        if (!cond.locationField || cond.locationField === 'City') {
            const cName = city.split(',')[0].trim().toLowerCase();
            return cName === String(cond.value).toLowerCase();
         }

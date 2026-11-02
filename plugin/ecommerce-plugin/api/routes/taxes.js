@@ -5,6 +5,45 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const Settings_1 = __importDefault(require("../models/Settings"));
 const TaxClass_1 = __importDefault(require("../models/TaxClass"));
 const TaxRule_1 = __importDefault(require("../models/TaxRule"));
+const TaxEngine_1 = require("../services/TaxEngine");
+const POLICIES = ['UseGlobal', 'Taxable', 'NonTaxable'];
+/** Checks a tax rule payload; returns the cleaned rule or a list of field errors. */
+function cleanRule(body) {
+    const errors = {};
+    const name = String(body?.name || '').trim();
+    if (!name)
+        errors.name = 'Enter a tax name.';
+    if (!/^[a-f0-9]{24}$/i.test(String(body?.taxClassId?._id || body?.taxClassId || '')))
+        errors.taxClassId = 'Choose a tax category.';
+    const components = Array.isArray(body?.components) ? body.components : [];
+    if (!components.length)
+        errors.components = 'Add at least one rate.';
+    const cleaned = components.map((c) => ({ label: String(c?.label || '').trim(), rate: Number(c?.rate) }));
+    if (cleaned.some((c) => !c.label))
+        errors.components = 'Every rate needs a label, like CGST.';
+    else if (cleaned.some((c) => !Number.isFinite(c.rate) || c.rate < 0 || c.rate > 100))
+        errors.components = 'Rates must be between 0% and 100%.';
+    const priority = Number(body?.priority ?? 0);
+    if (!Number.isInteger(priority))
+        errors.priority = 'Priority must be a whole number.';
+    if (Object.keys(errors).length)
+        return { errors };
+    const scope = (v) => String(v || '').trim() || '*';
+    return {
+        rule: {
+            name,
+            taxClassId: String(body.taxClassId?._id || body.taxClassId),
+            country: scope(body.country),
+            state: scope(body.state),
+            postalScope: scope(body.postalScope),
+            components: cleaned,
+            shippingTaxPolicy: POLICIES.includes(body.shippingTaxPolicy) ? body.shippingTaxPolicy : 'UseGlobal',
+            priority,
+            status: body.status === 'Inactive' ? 'Inactive' : 'Active',
+        },
+    };
+}
+const invalid = (res, errors) => res.status(400).json({ success: false, message: Object.values(errors)[0], errors });
 module.exports = (app) => {
     // Auto-Migrate old tax setting to the new system if needed
     app.post('/taxes/migrate', async (req, res) => {
@@ -73,7 +112,11 @@ module.exports = (app) => {
         try {
             const TaxClassModel = TaxClass_1.default.getModel();
             const classes = await TaxClassModel.find({ tenantId: req.tenantId || 'default_tenant' }).sort({ createdAt: -1 });
-            res.json({ success: true, classes });
+            // Products per tax category ('Default' = products using the store default).
+            const Product = require('../models/Product').getModel();
+            const counts = await Product.collection.aggregate([{ $group: { _id: { $ifNull: ['$taxClassId', 'Default'] }, n: { $sum: 1 } } }]).toArray();
+            const productCounts = Object.fromEntries(counts.map((c) => [String(c._id || 'Default'), c.n]));
+            res.json({ success: true, classes, productCounts });
         }
         catch (e) {
             res.status(500).json({ success: false, message: e.message });
@@ -116,6 +159,8 @@ module.exports = (app) => {
         try {
             const TaxClassModel = TaxClass_1.default.getModel();
             const doc = await TaxClassModel.findById(req.params.id);
+            if (!doc)
+                return res.status(404).json({ success: false, message: 'Tax category not found.' });
             res.json({ success: true, class: doc });
         }
         catch (e) {
@@ -165,8 +210,13 @@ module.exports = (app) => {
     app.get('/taxes/rules', async (req, res) => {
         try {
             const TaxRuleModel = TaxRule_1.default.getModel();
-            const rules = await TaxRuleModel.find({ tenantId: req.tenantId || 'default_tenant' }).populate('taxClassId').sort({ priority: -1, createdAt: -1 });
-            res.json({ success: true, rules });
+            const tenantId = req.tenantId || 'default_tenant';
+            const rules = await TaxRuleModel.find({ tenantId }).sort({ priority: -1, createdAt: -1 }).lean();
+            // Attach each rule's tax class by hand: OpenExt registers models under prefixed names,
+            // so populate('taxClassId') can't find 'EcommerceTaxClass' there.
+            const classes = await TaxClass_1.default.getModel().find({ tenantId }).lean();
+            const byId = new Map(classes.map((c) => [String(c._id), c]));
+            res.json({ success: true, rules: rules.map((r) => ({ ...r, taxClassId: byId.get(String(r.taxClassId)) || r.taxClassId })) });
         }
         catch (e) {
             res.status(500).json({ success: false, message: e.message });
@@ -175,8 +225,10 @@ module.exports = (app) => {
     app.post('/taxes/rules', async (req, res) => {
         try {
             const TaxRuleModel = TaxRule_1.default.getModel();
-            const data = { ...req.body, tenantId: req.tenantId || 'default_tenant' };
-            const doc = await TaxRuleModel.create(data);
+            const { rule, errors } = cleanRule(req.body);
+            if (errors)
+                return invalid(res, errors);
+            const doc = await TaxRuleModel.create({ ...rule, tenantId: req.tenantId || 'default_tenant' });
             res.json({ success: true, rule: doc });
         }
         catch (e) {
@@ -196,7 +248,12 @@ module.exports = (app) => {
     app.put('/taxes/rules/:id', async (req, res) => {
         try {
             const TaxRuleModel = TaxRule_1.default.getModel();
-            const doc = await TaxRuleModel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+            const { rule, errors } = cleanRule(req.body);
+            if (errors)
+                return invalid(res, errors);
+            const doc = await TaxRuleModel.findByIdAndUpdate(req.params.id, rule, { new: true });
+            if (!doc)
+                return res.status(404).json({ success: false, message: 'Tax rate not found.' });
             res.json({ success: true, rule: doc });
         }
         catch (e) {
@@ -208,6 +265,35 @@ module.exports = (app) => {
             const TaxRuleModel = TaxRule_1.default.getModel();
             await TaxRuleModel.findByIdAndUpdate(req.params.id, { status: 'Inactive' });
             res.json({ success: true, message: 'Archived safely' });
+        }
+        catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    });
+    // Read-only: which rate the engine would use for a category and address, and the tax on an amount.
+    app.post('/taxes/preview', async (req, res) => {
+        try {
+            const { taxClassId, country, state, postalCode } = req.body || {};
+            const amount = Math.max(0, Number(req.body?.amount) || 0);
+            const settings = await Settings_1.default.getModel().collection.findOne({ tenantId: 'default_tenant' });
+            const classId = !taxClassId || taxClassId === 'Default' ? settings?.defaultTaxClassId || 'NonTaxable' : String(taxClassId);
+            const enabled = settings?.taxesEnabled !== false;
+            const rule = enabled && classId !== 'NonTaxable' ? await TaxEngine_1.TaxEngine.resolveRule(classId, { country, state, postalCode }) : null;
+            const rate = rule ? (rule.components || []).reduce((s, c) => s + (Number(c.rate) || 0), 0) : 0;
+            const inclusive = settings?.pricesIncludeTax === true;
+            const tax = inclusive ? amount - amount / (1 + rate / 100) : amount * (rate / 100);
+            res.json({
+                success: true,
+                preview: {
+                    taxesEnabled: enabled,
+                    taxClassId: classId,
+                    pricesIncludeTax: inclusive,
+                    rule: rule ? { _id: rule._id, name: rule.name, country: rule.country, state: rule.state, postalScope: rule.postalScope, components: rule.components, priority: rule.priority } : null,
+                    rate,
+                    amount,
+                    tax: Math.round(tax * 100) / 100,
+                },
+            });
         }
         catch (e) {
             res.status(500).json({ success: false, message: e.message });
