@@ -18,6 +18,7 @@ import { UNASSIGNED_LOCATION, listInventory, type InventoryItemRow, type Invento
 import { inventoryUrls } from '@/lib/products/urls';
 import { listLocations, type Location } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 const STOCK_OPTIONS: SelectOption[] = [
@@ -269,7 +270,7 @@ function InventoryList() {
                         className="cursor-pointer"
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('a,button')) return;
-                          window.location.href = inventoryUrls.detail(r._id);
+                          navigate(inventoryUrls.detail(r._id));
                         }}
                       >
                         <TableCell className="max-w-[24rem] py-2.5 pl-4">

@@ -1,227 +1,126 @@
 import React, { useState } from 'react';
+import { ImageOff, ShoppingBag } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { formatInr } from '../cart/links';
 import type { PublicProductDTO } from '../types/storefront';
 
 export interface ProductCardProps {
   product: PublicProductDTO;
   categoryName?: string | null;
-  currencySymbol?: string;
   showCategory?: boolean;
   showSku?: boolean;
   showComparePrice?: boolean;
   showDiscountBadge?: boolean;
   showStock?: boolean;
   showAddToCart?: boolean;
+  /** 'square' (default), 'portrait' (4:5) or 'landscape' (4:3). */
+  imageAspect?: string;
   href?: string;
   onAddToCart?: (productId: string) => void;
   className?: string;
 }
 
+const ASPECT: Record<string, string> = { square: 'aspect-square', portrait: 'aspect-[4/5]', landscape: 'aspect-[4/3]' };
+
+/** Product tile (shadcn product-card-2): image with hover zoom, badges, name, price and Add to cart. */
 export function ProductCard({
   product,
   categoryName,
-  currencySymbol = '₹',
   showCategory = true,
   showSku = false,
   showComparePrice = true,
   showDiscountBadge = true,
   showStock = true,
   showAddToCart = true,
+  imageAspect = 'square',
   href,
   onAddToCart,
-  className = '',
+  className,
 }: ProductCardProps) {
   const [imgError, setImgError] = useState(false);
-
-  // 1. Resolve image: primary image, first array image, or fallback
-  const rawImage =
-    product?.image ||
-    (Array.isArray(product?.images) && product.images.length > 0 ? product.images[0] : null);
-
-  // 2. Resolve pricing: backend-authoritative catalogPrice or price
-  const displayPrice =
-    typeof product?.catalogPrice === 'number' && Number.isFinite(product.catalogPrice)
-      ? product.catalogPrice
-      : typeof product?.price === 'number' && Number.isFinite(product.price)
-        ? product.price
-        : 0;
-
-  const compareAtPrice =
-    typeof product?.compareAtPrice === 'number' && Number.isFinite(product.compareAtPrice)
-      ? product.compareAtPrice
-      : null;
-
-  const hasDiscount =
-    compareAtPrice !== null &&
-    compareAtPrice > displayPrice &&
-    typeof product?.discountPercentage === 'number' &&
-    product.discountPercentage > 0;
-
-  // 3. Resolve stock status
-  const isOutOfStock =
-    product?.inStock === false || (typeof product?.stock === 'number' && product.stock <= 0);
-
-  // 4. Resolve link: leave unset/disabled until Milestone 10 unless explicit href passed
+  const image = product.image || product.images?.[0] || null;
+  const price = Number.isFinite(product.catalogPrice) ? product.catalogPrice : product.price || 0;
+  const compareAt = typeof product.compareAtPrice === 'number' ? product.compareAtPrice : null;
+  const hasDiscount = compareAt !== null && compareAt > price && product.discountPercentage > 0;
+  const isOutOfStock = product.inStock === false || (typeof product.stock === 'number' && product.stock <= 0);
+  const lowStock = !isOutOfStock && product.variants.length === 0 && product.stock > 0 && product.stock <= 5;
   const hasValidHref = typeof href === 'string' && href.trim().length > 0;
-  const productHref = hasValidHref ? href.trim() : undefined;
-
-  const formatCurrency = (amount: number) => {
-    return `${currencySymbol}${amount.toLocaleString('en-IN')}`;
-  };
-
-  const handleAddToCart = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (isOutOfStock || !onAddToCart || !product?.id) return;
-    onAddToCart(product.id);
-  };
-
-  const renderMediaContent = () => (
-    <>
-      {rawImage && !imgError ? (
-        <img
-          src={rawImage}
-          alt={product?.name || 'Product image'}
-          className="ecom-sf-product-card-img"
-          loading="lazy"
-          decoding="async"
-          onError={() => setImgError(true)}
-        />
-      ) : (
-        <div className="ecom-sf-product-card-img-fallback" aria-label="No image available">
-          <svg
-            className="ecom-sf-product-card-fallback-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-            <circle cx="8.5" cy="8.5" r="1.5" />
-            <polyline points="21 15 16 10 5 21" />
-          </svg>
-        </div>
-      )}
-    </>
-  );
+  const link = hasValidHref ? href!.trim() : undefined;
+  const name = product.name || 'Untitled product';
 
   return (
-    <article
-      className={`ecom-sf-product-card ${className}`.trim()}
-      data-product-id={product?.id}
+    <Card
+      className={cn('ecom-sf-product-card group h-full gap-0 overflow-hidden py-0 transition-shadow hover:shadow-lg', className)}
+      data-product-id={product.id}
       data-in-stock={!isOutOfStock}
     >
-      {/* Product Image & Badges */}
-      <div className="ecom-sf-product-card-media">
-        {hasValidHref ? (
-          <a
-            href={productHref}
-            className="ecom-sf-product-card-img-link"
-            tabIndex={-1}
-            aria-hidden="true"
-          >
-            {renderMediaContent()}
-          </a>
+      <a href={link} tabIndex={-1} aria-hidden="true" className="relative block overflow-hidden bg-muted">
+        {image && !imgError ? (
+          <img
+            src={image}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => setImgError(true)}
+            className={cn('w-full object-cover transition-transform duration-300 group-hover:scale-105', ASPECT[imageAspect] || ASPECT.square)}
+          />
         ) : (
-          <div className="ecom-sf-product-card-img-link" aria-hidden="true">
-            {renderMediaContent()}
+          <div className={cn('ecom-sf-product-card-img-fallback flex w-full items-center justify-center text-muted-foreground/60', ASPECT[imageAspect] || ASPECT.square)}>
+            <ImageOff className="size-8" aria-label="No image" />
           </div>
         )}
-
-        {/* Top Badges: Discount & Digital */}
-        <div className="ecom-sf-product-card-badge-container">
-          {showDiscountBadge && hasDiscount && (
-            <span className="ecom-sf-product-card-badge ecom-sf-product-card-badge-discount">
-              {Math.round(product.discountPercentage)}% OFF
-            </span>
-          )}
-          {product?.isDigital && (
-            <span className="ecom-sf-product-card-badge ecom-sf-product-card-badge-digital">
-              Digital
-            </span>
-          )}
+        <div className="absolute top-3 left-3 flex flex-col items-start gap-1.5">
+          {showDiscountBadge && hasDiscount && <Badge className="ecom-sf-product-card-badge-discount rounded-md">{Math.round(product.discountPercentage)}% off</Badge>}
+          {product.isDigital && <Badge variant="secondary" className="rounded-md">Digital</Badge>}
+          {isOutOfStock && <Badge variant="secondary" className="rounded-md">Sold out</Badge>}
         </div>
-      </div>
+      </a>
 
-      {/* Product Content */}
-      <div className="ecom-sf-product-card-body">
-        {/* Category, SKU & Stock Indicators */}
-        <div className="ecom-sf-product-card-meta">
-          <div className="ecom-sf-product-card-meta-left">
-            {showCategory && categoryName && (
-              <span className="ecom-sf-product-card-category" title={categoryName}>
-                {categoryName}
-              </span>
-            )}
-            {showSku && product?.sku && (
-              <span className="ecom-sf-product-card-sku">SKU: {product.sku}</span>
-            )}
-          </div>
-          {showStock && (
-            <span
-              className={`ecom-sf-product-card-stock ${
-                isOutOfStock
-                  ? 'ecom-sf-product-card-stock-out'
-                  : 'ecom-sf-product-card-stock-in'
-              }`}
-            >
-              <span className="ecom-sf-product-card-stock-dot" aria-hidden="true" />
-              {isOutOfStock ? 'Out of Stock' : 'In Stock'}
-            </span>
-          )}
-        </div>
-
-        {/* Product Title / Semantic Link (max 2 lines) */}
-        <h3 className="ecom-sf-product-card-title" title={product?.name || ''}>
-          {hasValidHref ? (
-            <a href={productHref} className="ecom-sf-product-card-title-link">
-              {product?.name || 'Untitled Product'}
+      <CardContent className="flex flex-1 flex-col gap-2 p-4">
+        {showCategory && categoryName && (
+          <span className="ecom-sf-product-card-category truncate text-xs font-medium tracking-wide text-muted-foreground uppercase">{categoryName}</span>
+        )}
+        <h3 className="ecom-sf-product-card-title line-clamp-2 text-base font-semibold text-balance" title={name}>
+          {link ? (
+            <a href={link} className="hover:underline underline-offset-4">
+              {name}
             </a>
           ) : (
-            <span className="ecom-sf-product-card-title-text">
-              {product?.name || 'Untitled Product'}
-            </span>
+            <span className="ecom-sf-product-card-title-text">{name}</span>
           )}
         </h3>
+        {showSku && product.sku && <span className="ecom-sf-product-card-sku text-xs text-muted-foreground">SKU {product.sku}</span>}
 
-        {/* Price & Action Section Pinned to Bottom */}
-        <div className="ecom-sf-product-card-footer">
-          <div className="ecom-sf-product-card-pricing" aria-label="Product Price">
-            <span className="ecom-sf-product-card-price-current">
-              {formatCurrency(displayPrice)}
-            </span>
-            {showComparePrice && hasDiscount && compareAtPrice !== null && (
-              <span
-                className="ecom-sf-product-card-price-compare"
-                aria-label={`Original price: ${formatCurrency(compareAtPrice)}`}
-              >
-                {formatCurrency(compareAtPrice)}
-              </span>
-            )}
-          </div>
-
-          {showAddToCart && (
-            <div className="ecom-sf-product-card-actions">
-              <button
-                type="button"
-                className="ecom-sf-product-card-btn"
-                onClick={handleAddToCart}
-                disabled={isOutOfStock}
-                aria-disabled={isOutOfStock}
-                aria-label={
-                  isOutOfStock
-                    ? `${product?.name || 'Product'} is out of stock`
-                    : `Add ${product?.name || 'product'} to cart`
-                }
-              >
-                {isOutOfStock ? 'Out of Stock' : 'Add to Cart'}
-              </button>
-            </div>
-          )}
+        <div className="ecom-sf-product-card-footer mt-auto flex flex-wrap items-baseline gap-2 pt-1" aria-label="Price">
+          <span className="ecom-sf-product-card-price-current text-lg font-semibold">{formatInr(price)}</span>
+          {showComparePrice && hasDiscount && <span className="ecom-sf-product-card-price-compare text-sm text-muted-foreground line-through">{formatInr(compareAt)}</span>}
         </div>
-      </div>
-    </article>
+        {showStock && (
+          <span className={cn('ecom-sf-product-card-stock flex items-center gap-1.5 text-xs font-medium', isOutOfStock ? 'text-destructive' : 'text-success')}>
+            <span className={cn('size-1.5 rounded-full', isOutOfStock ? 'bg-destructive' : 'bg-success')} aria-hidden="true" />
+            {isOutOfStock ? 'Out of stock' : lowStock ? `Only ${product.stock} left` : 'In stock'}
+          </span>
+        )}
+        {showAddToCart && (
+          <Button
+            variant={isOutOfStock ? 'secondary' : 'default'}
+            className="ecom-sf-product-card-btn mt-2 w-full cursor-pointer"
+            disabled={isOutOfStock}
+            aria-disabled={isOutOfStock}
+            onClick={(e) => {
+              e.preventDefault();
+              if (!isOutOfStock) onAddToCart?.(product.id);
+            }}
+            aria-label={isOutOfStock ? `${name} is out of stock` : product.variants.length ? `Choose options for ${name}` : `Add ${name} to cart`}
+          >
+            {!isOutOfStock && <ShoppingBag data-icon="inline-start" />}
+            {isOutOfStock ? 'Out of stock' : product.variants.length ? 'Choose options' : 'Add to cart'}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }

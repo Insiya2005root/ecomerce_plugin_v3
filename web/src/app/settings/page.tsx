@@ -11,6 +11,8 @@ import { formatMoney } from '@/lib/format';
 import { settingsUrls } from '@/lib/products/urls';
 import { getSettingsOverview, type SettingsOverview } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { AdminToaster } from '@/components/admin/toast';
+import { StorefrontPagesCard } from '@/components/settings/StorefrontPagesCard';
 
 type Card = { href: string; icon: IconSvgElement; tint: string; title: string; description: string; summary: (o: SettingsOverview) => string; warn?: (o: SettingsOverview) => string | null };
 
@@ -73,6 +75,7 @@ export default function SettingsOverviewPage() {
   const { data, error, reload } = useLoader(getSettingsOverview);
 
   return (
+    <AdminToaster>
     <div className="space-y-5">
       <AdminPageHeader breadcrumbs={[{ label: 'Settings' }]} title="Settings" description="Manage your store details, taxes, shipping and locations." />
       {error && !data ? (
@@ -106,6 +109,8 @@ export default function SettingsOverviewPage() {
           })}
         </div>
       )}
+      <StorefrontPagesCard />
     </div>
+    </AdminToaster>
   );
 }

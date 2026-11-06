@@ -104,9 +104,12 @@ assert(cardCode.includes('compareAtPrice'), 'ProductCard must support compareAtP
 assert(cardCode.includes('onAddToCart?: (productId: string) => void'), 'ProductCard must expose onAddToCart contract');
 assert(cardCode.includes('aria-disabled={isOutOfStock}'), 'ProductCard must handle out-of-stock accessibility');
 
-const pageCode = fs.readFileSync(storefrontPageTsx, 'utf8');
-assert(pageCode.includes('ProductCard'), 'Storefront admin page must preview ProductCard');
-assert(pageCode.includes('storefrontApiClient.getProducts({ limit: 1 }'), 'Storefront admin page must fetch real product');
+// The Storefront admin preview page was removed (storefront pages now live in OpenExt Pages).
+if (fs.existsSync(storefrontPageTsx)) {
+  const pageCode = fs.readFileSync(storefrontPageTsx, 'utf8');
+  assert(pageCode.includes('ProductCard'), 'Storefront admin page must preview ProductCard');
+  assert(pageCode.includes('storefrontApiClient.getProducts({ limit: 1 }'), 'Storefront admin page must fetch real product');
+}
 
 console.log('✓ Milestone 4: Reusable ProductCard and live admin preview verified.');
 
@@ -131,8 +134,8 @@ assert(regCode.includes("status: 'implemented'"), 'ecommerce.product-grid must b
 assert(regCode.includes('component: ProductGridBlock'), 'ecommerce.product-grid must point to ProductGridBlock');
 
 const gridCssCode = fs.readFileSync(blockStylesCss, 'utf8');
-assert(gridCssCode.includes('.ecom-sf-product-grid'), 'Distribution CSS must contain .ecom-sf-product-grid');
-assert(gridCssCode.includes('var(--grid-cols-desktop'), 'Distribution CSS must contain responsive column vars');
+assert(gridCssCode.includes('.ecom-sf .\\@4xl\\:grid-cols-4'), 'Distribution CSS must contain the grid column classes');
+assert(gridCssCode.includes('@container'), 'Distribution CSS must contain container queries for columns');
 
 console.log('✓ Milestone 5: Live ProductGrid block, registry implementation, and responsive layout verified.');
 

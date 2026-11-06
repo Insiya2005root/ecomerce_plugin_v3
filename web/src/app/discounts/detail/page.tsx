@@ -26,6 +26,7 @@ import { ApiError } from '@/lib/products/api';
 import { categoryPath } from '@/lib/products/form';
 import { orderUrls, productUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 function Tile({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub?: React.ReactNode; accent: string }) {
   return (
@@ -98,7 +99,7 @@ function PromotionDetail() {
     onUpdated: (r) => setRule((prev) => (prev ? { ...prev, ...r } : r)),
     onRemoved: (r, archived) => {
       toast.flash(archived ? 'Archived (used by past orders)' : 'Deleted', r.name);
-      window.location.href = promotionUrls.list(tabOf(r));
+      navigate(promotionUrls.list(tabOf(r)));
     },
   });
 

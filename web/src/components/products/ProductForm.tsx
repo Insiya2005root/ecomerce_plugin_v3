@@ -26,17 +26,14 @@ import {
 } from "@/lib/products/form";
 import { productUrls } from "@/lib/products/urls";
 import { cn } from "@/lib/utils";
+import { addLeaveGuard, navigate } from "@/lib/router";
 
 /** Warns before leaving with unsaved edits. Returns a callback that allows the next navigation (after a save). */
 function useUnsavedChangesWarning(dirty: boolean) {
   const allowLeave = React.useRef(false);
   React.useEffect(() => {
     if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!allowLeave.current) e.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    return addLeaveGuard(() => !allowLeave.current);
   }, [dirty]);
   return React.useCallback(() => {
     allowLeave.current = true;
@@ -104,7 +101,7 @@ export function ProductForm({
       const saved = mode === "create" ? await createProduct(payload) : await updateProduct(productId!, payload);
       allowLeave();
       toast.flash(mode === "create" ? "Product created" : "Product saved", saved.name);
-      window.location.href = productUrls.detail(saved._id);
+      navigate(productUrls.detail(saved._id));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save the product.";
       if (err instanceof ApiError && err.status === 409 && /SKU/i.test(message)) {
@@ -119,7 +116,7 @@ export function ProductForm({
   const sectionProps = { values, onChange, errors };
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4 pb-20">
+    <form onSubmit={submit} noValidate className="space-y-4">
       {submitError && <InlineError message={submitError} />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -158,7 +155,7 @@ export function ProductForm({
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+      <div className="sticky bottom-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6 lg:px-8">
           {dirty && <span className="mr-auto text-xs text-muted-foreground">Unsaved changes</span>}
           <a href={cancelHref} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "rounded-md")}>

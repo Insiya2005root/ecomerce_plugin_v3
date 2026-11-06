@@ -18,6 +18,7 @@ import { formatMoney } from '@/lib/format';
 import { usePincodeLookup } from '@/lib/geo';
 import { settingsUrls } from '@/lib/products/urls';
 import { fieldErrorsOf } from '@/lib/request';
+import { navigate } from '@/lib/router';
 import {
   INDIAN_STATES,
   classIdOf,
@@ -314,7 +315,7 @@ function TaxSettings() {
                     className="cursor-pointer"
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('a,button')) return;
-                      window.location.href = settingsUrls.taxClass(c._id);
+                      navigate(settingsUrls.taxClass(c._id));
                     }}
                   >
                     <TableCell className="py-2.5 pl-5">
@@ -368,7 +369,7 @@ function TaxSettings() {
         onClose={() => setPanel(null)}
         onSaved={(created) => {
           toast.flash('Tax category created', 'Add its rates next.');
-          window.location.href = settingsUrls.taxClass(created._id);
+          navigate(settingsUrls.taxClass(created._id));
         }}
       />
     </div>

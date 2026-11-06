@@ -4,7 +4,8 @@ import {
   resolveBlockTypeString,
   validateStorefrontBlock,
 } from '../registry/blockValidation';
-import { StorefrontShell } from '../components/StorefrontState';
+import { EditorHint, StorefrontShell } from '../components/StorefrontState';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import type { BlockRendererProps } from '../types/storefront';
 
 export interface UnknownBlockFallbackProps {
@@ -21,34 +22,51 @@ export function UnknownBlockFallback({
     return null;
   }
 
-  // Editor mode: show compact professional warning in existing OpenExt / Ecommerce visual language
   return (
     <StorefrontShell>
-      <div
-        className="ecom-sf-card ecom-sf-card-warning"
-        data-editing="true"
-        data-unknown-block="true"
-        role="alert"
-      >
-        <div className="ecom-sf-header">
-          <div>
-            <span className="ecom-sf-badge ecom-sf-badge-warning">
-              Unsupported Block
-            </span>
-            <h3 className="ecom-sf-title">
-              Unsupported Ecommerce block: {blockType}
-            </h3>
-            <p className="ecom-sf-subtitle">
-              This block type is not registered in the current version of the Ecommerce plugin. Remove or replace it in the page blueprint.
-            </p>
-          </div>
-        </div>
-      </div>
+      <Alert data-editing="true" data-unknown-block="true">
+        <AlertTitle>Unsupported Ecommerce block: {blockType}</AlertTitle>
+        <AlertDescription>This block type isn't in this version of the Ecommerce plugin. Remove it, or pick another block under Plugin Settings.</AlertDescription>
+      </Alert>
     </StorefrontShell>
   );
 }
 
-export function BlockRenderer({ block, isEditing = false }: BlockRendererProps) {
+/**
+ * OpenExt's page builder keeps a plugin block's configuration as JSON text in `content`
+ * ({"blockType":"ecommerce.product-grid","settings":{...}}), and its settings panel writes there.
+ * Pages created by older plugin versions also carry blockType/settings directly on the block; those are
+ * only a fallback, so edits made in the page builder always win.
+ */
+export function unwrapCmsBlock(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.content !== 'string' || !obj.content.trim().startsWith('{')) return raw;
+  try {
+    const parsed = JSON.parse(obj.content) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return raw;
+    const settings = parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : obj.settings;
+    return { ...obj, ...parsed, blockType: parsed.blockType ?? obj.blockType, settings };
+  } catch {
+    return raw;
+  }
+}
+
+/** A block dropped from the page builder palette has no block type until one is picked in its settings. */
+function hasChosenBlockType(block: unknown): boolean {
+  const obj = (block || {}) as Record<string, unknown>;
+  return typeof obj.blockType === 'string' && obj.blockType.trim().length > 0;
+}
+
+export function BlockRenderer({ block: rawBlock, isEditing = false }: BlockRendererProps) {
+  const block = unwrapCmsBlock(rawBlock);
+  if (!hasChosenBlockType(block)) {
+    return isEditing ? (
+      <StorefrontShell>
+        <EditorHint>Ecommerce block: choose what it shows (product grid, cart, checkout…) under Plugin Settings on the right.</EditorHint>
+      </StorefrontShell>
+    ) : null;
+  }
   const resolvedBlockType = resolveBlockTypeString(block);
   const definition = blockRegistry.get(resolvedBlockType);
 
@@ -103,7 +121,7 @@ export function PageBlocksRenderer({
   }
 
   return (
-    <div className="ecom-sf-blocks-container" data-editing={isEditing}>
+    <div className="flex flex-col" data-editing={isEditing}>
       {blocks.map((b, index) => {
         const rawObj = b && typeof b === 'object' ? (b as Record<string, unknown>) : null;
         const key =

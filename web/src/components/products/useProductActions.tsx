@@ -8,6 +8,7 @@ import { toast } from "@/components/admin/toast";
 import { deleteProduct, duplicateProduct, getProduct, updateProduct } from "@/lib/products/api";
 import { PRODUCT_STATUSES, type Product, type ProductStatus } from "@/lib/products/types";
 import { productUrls } from "@/lib/products/urls";
+import { navigate } from "@/lib/router";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : "Please try again.");
 
@@ -46,7 +47,7 @@ export function useProductActions({
       const source = await getProduct(product._id);
       const copy = await duplicateProduct(source);
       toast.flash("Product duplicated", `${copy.name} was created as a draft.`);
-      window.location.href = productUrls.detail(copy._id);
+      navigate(productUrls.detail(copy._id));
     } catch (err) {
       toast.error("Could not duplicate product", message(err));
       setBusyId(null);
@@ -83,9 +84,9 @@ export function useProductActions({
       return [
         [
           ...(includeView
-            ? [{ label: "View details", icon: ViewIcon, onSelect: () => (window.location.href = productUrls.detail(product._id)) }]
+            ? [{ label: "View details", icon: ViewIcon, onSelect: () => navigate(productUrls.detail(product._id)) }]
             : []),
-          { label: "Edit", icon: Edit02Icon, onSelect: () => (window.location.href = productUrls.edit(product._id)) },
+          { label: "Edit", icon: Edit02Icon, onSelect: () => navigate(productUrls.edit(product._id)) },
           { label: "Duplicate", icon: Copy01Icon, disabled: busy, onSelect: () => duplicate(product) },
         ],
         PRODUCT_STATUSES.filter((s) => s !== product.status).map((s) => ({

@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader';
 import { AdminToaster } from '@/components/admin/toast';
 import { ProductForm } from '@/components/products/ProductForm';

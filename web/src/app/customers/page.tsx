@@ -17,6 +17,7 @@ import { CUSTOMER_SEGMENTS, listCustomers, type Customer, type CustomerListQuery
 import { formatDate, formatMoney } from '@/lib/format';
 import { cartUrl, customerUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 const SEGMENT_OPTIONS: SelectOption[] = [{ value: 'all', label: 'All customers' }, ...CUSTOMER_SEGMENTS.filter((s) => s !== 'No purchases').map((s) => ({ value: s, label: s }))];
@@ -272,7 +273,7 @@ function CustomersList() {
                         className="cursor-pointer"
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('a,button')) return;
-                          window.location.href = customerUrls.detail(c.email);
+                          navigate(customerUrls.detail(c.email));
                         }}
                       >
                         <TableCell className="max-w-[20rem] py-2.5 pl-4">

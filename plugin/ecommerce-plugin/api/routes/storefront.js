@@ -224,7 +224,7 @@ const registerStorefrontRoutes = (app) => {
         try {
             const tenantId = resolveTenantId(req);
             const ProductModel = Product_1.default.getModel();
-            const { search, categoryId, sort = 'newest', page = '1', limit = '12', ids, } = req.query;
+            const { search, categoryId, sort = 'newest', page = '1', limit = '12', ids, minPrice, maxPrice, } = req.query;
             const parsedPage = Math.max(1, parseInt(String(page || '1'), 10) || 1);
             const parsedLimit = Math.min(50, Math.max(1, parseInt(String(limit || '12'), 10) || 12));
             const skip = (parsedPage - 1) * parsedLimit;
@@ -269,9 +269,27 @@ const registerStorefrontRoutes = (app) => {
                             pagination: { total: 0, page: parsedPage, limit: parsedLimit, totalPages: 0 },
                         });
                     }
-                    query.categoryId = new mongoose_1.default.Types.ObjectId(trimmedCat);
+                    // A category includes its sub-categories (Apparel shows products filed under Apparel › Shirts).
+                    const CategoryModel = Category_1.default.getModel();
+                    const ids = [trimmedCat];
+                    for (let frontier = [trimmedCat], depth = 0; frontier.length && depth < 5; depth++) {
+                        const children = await CategoryModel.find({ tenantId, parentId: { $in: frontier } }).select('_id').lean();
+                        frontier = children.map((c) => String(c._id)).filter((id) => !ids.includes(id));
+                        ids.push(...frontier);
+                    }
+                    query.categoryId = { $in: ids.map((id) => new mongoose_1.default.Types.ObjectId(id)) };
                 }
             }
+            // Price range from the shop filter, on the price shoppers actually see.
+            const min = Number(minPrice);
+            const max = Number(maxPrice);
+            const priceBounds = [];
+            if (minPrice !== undefined && minPrice !== '' && Number.isFinite(min) && min > 0)
+                priceBounds.push({ $gte: [EFFECTIVE_PRICE, min] });
+            if (maxPrice !== undefined && maxPrice !== '' && Number.isFinite(max) && max >= 0)
+                priceBounds.push({ $lte: [EFFECTIVE_PRICE, max] });
+            if (priceBounds.length)
+                query.$expr = priceBounds.length === 1 ? priceBounds[0] : { $and: priceBounds };
             let products = [];
             let total = 0;
             // Price sorting must reflect actual customer-visible catalogPrice (factoring discounts)
@@ -281,35 +299,7 @@ const registerStorefrontRoutes = (app) => {
                     { $match: query },
                     {
                         $addFields: {
-                            effectiveCatalogPrice: {
-                                $cond: [
-                                    { $gt: [{ $ifNull: ['$discountPercentage', 0] }, 0] },
-                                    {
-                                        $round: [
-                                            {
-                                                $multiply: [
-                                                    '$price',
-                                                    { $subtract: [1, { $divide: ['$discountPercentage', 100] }] },
-                                                ],
-                                            },
-                                            2,
-                                        ],
-                                    },
-                                    {
-                                        $cond: [
-                                            {
-                                                $and: [
-                                                    { $ne: ['$discountPrice', null] },
-                                                    { $gte: ['$discountPrice', 0] },
-                                                    { $lt: ['$discountPrice', '$price'] },
-                                                ],
-                                            },
-                                            '$discountPrice',
-                                            '$price',
-                                        ],
-                                    },
-                                ],
-                            },
+                            effectiveCatalogPrice: EFFECTIVE_PRICE,
                         },
                     },
                     { $sort: { effectiveCatalogPrice: sortDir, _id: 1 } },
@@ -605,4 +595,34 @@ registerStorefrontRoutes.resolveTenantId = resolveTenantId;
 registerStorefrontRoutes.toPublicCategoryDTO = toPublicCategoryDTO;
 registerStorefrontRoutes.toPublicProductDTO = toPublicProductDTO;
 registerStorefrontRoutes.toPublicSettingsDTO = toPublicSettingsDTO;
+// The price shoppers see (product discount applied); used to sort and to filter by price.
+const EFFECTIVE_PRICE = {
+    $cond: [
+        { $gt: [{ $ifNull: ['$discountPercentage', 0] }, 0] },
+        {
+            $round: [
+                {
+                    $multiply: [
+                        '$price',
+                        { $subtract: [1, { $divide: ['$discountPercentage', 100] }] },
+                    ],
+                },
+                2,
+            ],
+        },
+        {
+            $cond: [
+                {
+                    $and: [
+                        { $ne: ['$discountPrice', null] },
+                        { $gte: ['$discountPrice', 0] },
+                        { $lt: ['$discountPrice', '$price'] },
+                    ],
+                },
+                '$discountPrice',
+                '$price',
+            ],
+        },
+    ],
+};
 module.exports = registerStorefrontRoutes;

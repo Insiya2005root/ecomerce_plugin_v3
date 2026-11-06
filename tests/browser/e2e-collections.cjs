@@ -66,6 +66,12 @@ async function waitForDownload(dir, timeout = 15000) {
 (async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && consoleProblems.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => consoleProblems.push(`[pageerror] ${e.message}`));
@@ -137,7 +143,7 @@ async function waitForDownload(dir, timeout = 15000) {
     await drawerSettled(page);
     await page.type('#collection-title', 'Best Sellers');
     await shot(page, 'collection-create');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, '[role="dialog"]:has(form) button', 'Create')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, '[role="dialog"]:has(form) button', 'Create')]);
     await waitText(page, 'Collection created');
     assert.ok((await main(page)).includes('/best-sellers'), 'handle derived from title');
     ok('create collection in a drawer → lands on its detail page');
@@ -180,7 +186,7 @@ async function waitForDownload(dir, timeout = 15000) {
     console.log('\n--> Product ↔ collection');
     await page.goto(`${BASE}/products/index.html?q=Sample%20product%2005`, { waitUntil: 'networkidle0' });
     await waitText(page, '1–1 of 1 results');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), page.click('tbody tr td:nth-child(3)')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), page.click('tbody tr td:nth-child(3)')]);
     await waitText(page, 'Organization');
     await openMenu(page, 'Organization actions', 'Edit organization');
     await drawerSettled(page);
@@ -214,7 +220,7 @@ async function waitForDownload(dir, timeout = 15000) {
     await waitText(page, 'Kitchen & Dining');
     ok('create category with a parent from the drawer');
 
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'tbody a', 'Apparel')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'tbody a', 'Apparel')]);
     await waitText(page, 'Subcategories');
     await openMenu(page, 'Category actions', 'Edit');
     await drawerSettled(page);
@@ -233,7 +239,7 @@ async function waitForDownload(dir, timeout = 15000) {
     ok('deleting a category that is in use shows the backend reason');
 
     await page.goto(`${BASE}/categories/edit/index.html?id=nope`, { waitUntil: 'networkidle0' });
-    await page.waitForFunction(() => location.pathname.includes('/categories/detail/'));
+    await page.waitForFunction(() => location.pathname.endsWith('/ecommerce-categories') && location.search.includes('view=detail'));
     ok('old categories/edit URL redirects to the new detail page');
 
     await page.setViewport({ width: 400, height: 860 });

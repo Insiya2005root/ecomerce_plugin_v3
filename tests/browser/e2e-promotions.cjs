@@ -50,7 +50,7 @@ async function pickProduct(page, buttonId, name) {
   await page.waitForFunction(() => !document.querySelector('input[aria-label="Search products"]'), { timeout: 8000 });
 }
 async function save(page, label) {
-  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 20000 }), clickByText(page, 'button[type="submit"]', label)]);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 20000 }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button[type="submit"]', label)]);
 }
 
 (async () => {
@@ -64,6 +64,12 @@ async function save(page, label) {
 
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && problems.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`[pageerror] ${e.message}`));
@@ -86,7 +92,7 @@ async function save(page, label) {
     await waitText(page, 'Revenue · last 7 days');
     ok(`dashboard: hero revenue ${stats.sales.revenue}, charts, top sellers, low stock, attention; range switch`);
     await page.click('a[href*="payment=Not%20paid"]');
-    await page.waitForNavigation({ waitUntil: 'networkidle0' }).catch(() => {});
+    await page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })).catch(() => {});
     await waitText(page, 'of 2 orders');
     ok('"Unpaid orders" tile opens Orders filtered to unpaid');
 
@@ -100,7 +106,7 @@ async function save(page, label) {
     await page.goto(`${BASE}/discounts/coupons/index.html`, { waitUntil: 'networkidle0' });
     await waitText(page, 'Ten percent off');
     await shot(page, 'coupons-list');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'tbody a', 'Ten percent off')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'tbody a', 'Ten percent off')]);
     await waitText(page, 'Performance');
     await page.waitForFunction(() => document.body.innerText.includes('No orders have used') || document.querySelectorAll('tbody tr').length > 0);
     const det = await text(page);
@@ -115,7 +121,7 @@ async function save(page, label) {
     await waitText(page, 'Activated');
     ok('pause / activate from the detail page');
 
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), openMenu(page, 'Discount actions', 'Duplicate')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), openMenu(page, 'Discount actions', 'Duplicate')]);
     await waitText(page, 'Duplicated as a draft');
     const dup = await text(page);
     assert.ok(dup.includes('Ten percent off (copy)') && dup.includes('Draft') && /TEN-[A-Z0-9]{4}/.test(dup));
@@ -128,7 +134,7 @@ async function save(page, label) {
     await waitText(page, 'Give the discount a name.');
     await waitText(page, 'Choose what the customer must buy.');
     await page.type('#name', 'Buy 2 tees get mug');
-    await page.click('[id="bogo.buyQuantity"]', { clickCount: 3 });
+    await page.$eval('[id="bogo.buyQuantity"]', (el) => { el.scrollIntoView({ block: 'center' }); el.focus(); el.select(); });
     await page.keyboard.press('Backspace');
     await page.type('[id="bogo.buyQuantity"]', '2');
     await pickProduct(page, 'bogo.buyTargetIds', 'Sample product 03');

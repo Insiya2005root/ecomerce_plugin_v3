@@ -46,6 +46,12 @@ async function typeInto(page, sel, value) {
 (async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && problems.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`[pageerror] ${e.message}`));
@@ -98,9 +104,9 @@ async function typeInto(page, sel, value) {
     assert.strictEqual(await summaryTotal(page), cartTotal, 'cart persisted across reload');
     ok('validation on place; cart and customer survive a page refresh');
 
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button', `Place order · ${cartTotal}`)]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button', `Place order · ${cartTotal}`)]);
     await waitText(page, 'Order placed');
-    assert.ok(page.url().includes('/orders/detail/'));
+    assert.ok(page.url().includes('ecommerce-orders?view=detail'), page.url());
     const detail = await bodyText(page);
     assert.ok(detail.includes(cartTotal), `order total ${cartTotal} matches the cart`);
     assert.ok(detail.includes('Ten percent off') && detail.includes('Admin cart') && detail.includes('Asha Patel'));
@@ -145,7 +151,7 @@ async function typeInto(page, sel, value) {
     await clickByText(page, '[role="option"] span', 'Linen Shirt');
     await settled(page);
     const t2 = await summaryTotal(page);
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button', `Place order · ${t2}`)]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button', `Place order · ${t2}`)]);
     await waitText(page, 'Order placed');
     const afterOrder = (await apiGet(`/products/${linen._id}`)).product.variants.find((v) => v.size === 'M').stock;
     assert.strictEqual(afterOrder, stockBefore - 1, 'variant stock reduced');

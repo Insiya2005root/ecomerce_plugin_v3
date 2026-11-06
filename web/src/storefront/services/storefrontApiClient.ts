@@ -140,6 +140,8 @@ export const storefrontApiClient = {
     if (Array.isArray(query.ids) && query.ids.length > 0) {
       params.set('ids', query.ids.join(','));
     }
+    if (typeof query.minPrice === 'number' && query.minPrice > 0) params.set('minPrice', String(query.minPrice));
+    if (typeof query.maxPrice === 'number' && query.maxPrice >= 0) params.set('maxPrice', String(query.maxPrice));
 
     const qs = params.toString();
     return requestStorefront<StorefrontProductsResponse>(

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Call02Icon, Mail01Icon, UserIcon } from '@hugeicons/core-free-icons';
 import { buttonVariants } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { ApiError } from '@/lib/products/api';
 import { promotionUrls } from '@/lib/discounts/describe';
 import { customerUrls, orderUrls, productUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: React.ReactNode }) {
   return (
@@ -132,7 +133,7 @@ function CustomerDetailView() {
                     className="cursor-pointer"
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest('a,button')) return;
-                      window.location.href = orderUrls.detail(o._id);
+                      navigate(orderUrls.detail(o._id));
                     }}
                   >
                     <TableCell className="py-2.5 pl-5">

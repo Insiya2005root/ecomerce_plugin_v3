@@ -458,6 +458,261 @@ const BASE_BLUEPRINTS = {
         },
     },
 };
+// ---------------------------------------------------------------------------------------------------------
+// Blueprint v2: full storefront layout (store header, hero, category tiles, trust strip, footer, two-column
+// cart and checkout, related products). Pages still on v1 and not customized upgrade automatically
+// (see ensurePageProvisioned); customized pages keep the merchant's blocks.
+// ---------------------------------------------------------------------------------------------------------
+const bool = (key, label) => ({ key, label, type: 'boolean' });
+const text = (key, label) => ({ key, label, type: 'string' });
+const V2_FIELD_SPECS = {
+    'ecommerce.store-header': [
+        bool('showAnnouncement', 'Show Announcement Bar'),
+        text('announcement', 'Announcement Text (blank = shipping & COD message)'),
+        bool('showCategoryLinks', 'Show Category Links'),
+        bool('showSearch', 'Show Search'),
+    ],
+    'ecommerce.shop-hero': [
+        text('eyebrow', 'Small Label Above Heading'),
+        text('heading', 'Heading'),
+        text('subheading', 'Subheading'),
+        text('buttonLabel', 'Button Label'),
+        {
+            key: 'style',
+            label: 'Banner Style',
+            type: 'select',
+            options: [
+                { label: 'Dark', value: 'dark' },
+                { label: 'Soft', value: 'soft' },
+                { label: 'Accent', value: 'accent' },
+            ],
+        },
+    ],
+    'ecommerce.category-showcase': [
+        text('heading', 'Section Heading'),
+        { key: 'maxItems', label: 'Maximum Categories', type: 'number', min: 2, max: 8 },
+    ],
+    'ecommerce.trust-badges': [
+        bool('showShipping', 'Show Shipping Badge'),
+        bool('showCod', 'Show Cash on Delivery Badge'),
+        bool('showReturns', 'Show Returns Badge'),
+        text('returnsText', 'Returns Policy Text'),
+        bool('showSecure', 'Show Secure Checkout Badge'),
+    ],
+    'ecommerce.store-footer': [
+        text('aboutText', 'About Text'),
+        bool('showContact', 'Show Contact Details'),
+    ],
+    'ecommerce.cart': [
+        text('emptyCartMessage', 'Empty Cart Message'),
+        bool('showCoupon', 'Show Coupon Box'),
+        bool('showFreeShippingProgress', 'Show Free Shipping Progress'),
+        text('proceedButtonText', 'Checkout Button Label'),
+    ],
+    'ecommerce.checkout': [
+        bool('requirePhone', 'Require Phone Number'),
+        bool('enableOrderNotes', 'Show Delivery Notes Field'),
+        text('checkoutNotice', 'Checkout Policy Note'),
+    ],
+};
+const V2_DEFAULTS = {
+    'ecommerce.store-header': { showAnnouncement: true, announcement: '', showCategoryLinks: true, showSearch: true },
+    'ecommerce.shop-hero': {
+        eyebrow: 'New season',
+        heading: 'Everyday essentials, made well',
+        subheading: 'Browse the full collection. Cash on Delivery available across India.',
+        buttonLabel: 'Shop all products',
+        style: 'dark',
+    },
+    'ecommerce.category-showcase': { heading: 'Shop by category', maxItems: 4 },
+    'ecommerce.trust-badges': { showShipping: true, showCod: true, showReturns: true, returnsText: 'Easy 7-day returns', showSecure: true },
+    'ecommerce.store-footer': { aboutText: 'Quality products, honest prices, delivered to your door.', showContact: true },
+    'ecommerce.cart': { emptyCartMessage: 'Your cart is empty.', showCoupon: true, showFreeShippingProgress: true, proceedButtonText: 'Proceed to Checkout' },
+    'ecommerce.checkout': {
+        requirePhone: true,
+        enableOrderNotes: true,
+        checkoutNotice: 'Final taxes, shipping and stock are confirmed when you place the order.',
+    },
+};
+function v2Block(page, id, blockType, label, required, settings) {
+    return {
+        id,
+        uniqueId: `ecommerce-${page}-${id}`,
+        type: 'ecommerce-plugin',
+        blockType,
+        label,
+        required,
+        enabled: true,
+        settings: cloneDeepJson(settings ?? V2_DEFAULTS[blockType] ?? {}),
+    };
+}
+function cloneDeepJson(val) {
+    return JSON.parse(JSON.stringify(val));
+}
+/** Reuses a v1 block (same id, settings) so merchant-facing settings stay the same. */
+function v1Block(page, blockType) {
+    const found = BASE_BLUEPRINTS[page].blocks.find((b) => b.blockType === blockType);
+    if (!found)
+        throw new Error(`Blueprint v1 has no ${blockType} block on the ${page} page`);
+    return cloneDeepJson(found);
+}
+function applyStorefrontV2() {
+    const header = (page) => v2Block(page, 'store-header', 'ecommerce.store-header', 'Store Header & Navigation', false);
+    const footer = (page) => v2Block(page, 'store-footer', 'ecommerce.store-footer', 'Store Footer', false);
+    const trust = (page) => v2Block(page, 'trust-badges', 'ecommerce.trust-badges', 'Trust & Service Badges', false);
+    const layouts = {
+        shop: [
+            header('shop'),
+            v2Block('shop', 'shop-hero', 'ecommerce.shop-hero', 'Hero Banner', false),
+            v2Block('shop', 'category-showcase', 'ecommerce.category-showcase', 'Shop by Category Tiles', false),
+            v1Block('shop', 'ecommerce.category-filter'),
+            v1Block('shop', 'ecommerce.product-grid'),
+            trust('shop'),
+            footer('shop'),
+        ],
+        product: [
+            header('product'),
+            v1Block('product', 'ecommerce.product-detail'),
+            v1Block('product', 'ecommerce.related-products'),
+            trust('product'),
+            footer('product'),
+        ],
+        cart: [header('cart'), v2Block('cart', 'cart', 'ecommerce.cart', 'Cart (Items, Coupon & Summary)', true), trust('cart'), footer('cart')],
+        checkout: [header('checkout'), v2Block('checkout', 'checkout', 'ecommerce.checkout', 'Checkout (Details & Order Summary)', true), footer('checkout')],
+    };
+    for (const page of Object.keys(layouts)) {
+        const bp = BASE_BLUEPRINTS[page];
+        bp.version = 2;
+        bp.blocks = layouts[page];
+        for (const block of bp.blocks) {
+            if (V2_FIELD_SPECS[block.blockType])
+                bp.fieldSpecs[block.blockType] = V2_FIELD_SPECS[block.blockType];
+        }
+    }
+}
+applyStorefrontV2();
+/** An Ecommerce block as OpenExt stores it: configuration lives in `content`, which the page builder edits. */
+function pluginComponent(block) {
+    return {
+        id: block.id,
+        uniqueId: block.uniqueId,
+        type: 'ecommerce-plugin',
+        label: block.label,
+        content: JSON.stringify({ blockType: block.blockType, settings: block.settings }),
+        style: { width: '100%' },
+    };
+}
+const V4_HERO = {
+    eyebrow: 'New season',
+    heading: 'Everyday essentials, made well',
+    subheading: 'Browse the full collection. Cash on Delivery available across India.',
+    buttonLabel: 'Shop all products',
+    buttonLink: '#catalog',
+    style: 'plain',
+    imageSource: 'products',
+    imagePosition: 'right',
+    showHighlights: true,
+};
+const V4_FEATURES = {
+    ...V2_DEFAULTS['ecommerce.trust-badges'],
+    layout: 'cards',
+    eyebrow: 'Why choose us',
+    heading: 'Why shop with us',
+    subheading: 'Quality products, honest prices and a checkout that keeps it simple.',
+};
+function v4EcommerceBlocks(page) {
+    const keep = (blockType) => {
+        const found = BASE_BLUEPRINTS[page].blocks.find((b) => b.blockType === blockType);
+        if (!found)
+            throw new Error(`Blueprint v2 has no ${blockType} block on the ${page} page`);
+        return cloneDeepJson(found);
+    };
+    switch (page) {
+        case 'shop':
+            return [
+                v2Block('shop', 'shop-hero', 'ecommerce.shop-hero', 'Hero Banner', false, V4_HERO),
+                keep('ecommerce.category-showcase'),
+                keep('ecommerce.category-filter'),
+                keep('ecommerce.product-grid'),
+                v2Block('shop', 'store-features', 'ecommerce.trust-badges', 'Store Features', false, V4_FEATURES),
+            ];
+        case 'product':
+            return [
+                keep('ecommerce.product-detail'),
+                keep('ecommerce.related-products'),
+                v2Block('product', 'store-features', 'ecommerce.trust-badges', 'Store Features', false, { ...V2_DEFAULTS['ecommerce.trust-badges'], layout: 'strip' }),
+            ];
+        case 'cart':
+            return [keep('ecommerce.cart')];
+        case 'checkout':
+            return [keep('ecommerce.checkout')];
+    }
+}
+/** The OpenExt page content for a page type, in page order. */
+async function buildPageComponents(_page, blocks) {
+    return blocks.map(pluginComponent);
+}
+function applyStorefrontV4() {
+    for (const page of exports.STOREFRONT_PAGE_TYPES) {
+        const bp = BASE_BLUEPRINTS[page];
+        bp.blocks = v4EcommerceBlocks(page);
+        bp.version = 4;
+    }
+}
+applyStorefrontV4();
+function stableStringify(value) {
+    if (Array.isArray(value))
+        return `[${value.map(stableStringify).join(',')}]`;
+    if (value && typeof value === 'object' && !(value instanceof Date)) {
+        const keys = Object.keys(value).filter((k) => value[k] !== undefined && k !== '_id').sort();
+        return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+    }
+    return JSON.stringify(value ?? null);
+}
+/** Fingerprint of an OpenExt page's content, used to tell whether the merchant edited it. */
+function hashComponents(components) {
+    return crypto.createHash('sha256').update(stableStringify(Array.isArray(components) ? components : [])).digest('hex');
+}
+/** Ecommerce blocks inside an OpenExt page (config from `content`, falling back to older top-level fields). */
+function extractEcommerceBlocks(components) {
+    const out = [];
+    const visit = (list) => {
+        if (!Array.isArray(list))
+            return;
+        for (const c of list) {
+            if (!c || typeof c !== 'object')
+                continue;
+            if (Array.isArray(c.children))
+                c.children.forEach(visit);
+            if (c.type !== 'ecommerce-plugin')
+                continue;
+            let parsed = {};
+            if (typeof c.content === 'string' && c.content.trim().startsWith('{')) {
+                try {
+                    parsed = JSON.parse(c.content) || {};
+                }
+                catch {
+                    parsed = {};
+                }
+            }
+            const blockType = String(parsed.blockType || c.blockType || '');
+            if (!blockType)
+                continue;
+            out.push({
+                id: String(c.id || c.uniqueId || blockType),
+                uniqueId: String(c.uniqueId || c.id || blockType),
+                type: 'ecommerce-plugin',
+                blockType,
+                label: String(c.label || blockType),
+                required: Boolean(c.required),
+                enabled: c.enabled !== false,
+                settings: parsed.settings && typeof parsed.settings === 'object' ? parsed.settings : c.settings || {},
+            });
+        }
+    };
+    visit(components);
+    return out;
+}
 // Optional runtime overrides used by controlled blueprint upgrade tests
 const blueprintOverrides = new Map();
 function cloneDeep(val) {
@@ -633,8 +888,10 @@ class StorefrontBlueprintService {
             for (const [k, v] of Object.entries(rawSettings)) {
                 const spec = specByKey.get(k);
                 if (!spec) {
-                    // Reject unknown arbitrary keys so blocks stay strictly configuration-driven
-                    if (!(k in bpBlock.settings)) {
+                    // Settings the page builder offers beyond this list (the storefront block defines them and checks
+                    // every value before use) are kept when they are plain values; anything else is rejected.
+                    const plain = typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)) || (typeof v === 'string' && v.length <= 2000);
+                    if (!(k in bpBlock.settings) && !plain) {
                         return {
                             valid: false,
                             error: `Unsupported setting "${k}" on block "${bpBlock.id}".`,
@@ -665,13 +922,15 @@ class StorefrontBlueprintService {
                     else if (spec.type === 'select') {
                         const allowedValues = (spec.options || []).map((o) => o.value);
                         const normalizedVal = typeof allowedValues[0] === 'number' ? Number(v) : String(v ?? '');
-                        if (allowedValues.length > 0 && !allowedValues.includes(normalizedVal)) {
+                        // Newer storefront versions add options (e.g. a 'plain' hero, 6 columns); short plain values pass.
+                        const passThrough = (typeof v === 'string' && /^[a-z0-9_-]{1,40}$/i.test(v)) || (typeof v === 'number' && Number.isFinite(v));
+                        if (allowedValues.length > 0 && !allowedValues.includes(normalizedVal) && !passThrough) {
                             return {
                                 valid: false,
                                 error: `Invalid option "${String(v)}" for setting "${spec.label}" on block "${bpBlock.label}".`,
                             };
                         }
-                        mergedSettings[k] = normalizedVal;
+                        mergedSettings[k] = allowedValues.includes(normalizedVal) ? normalizedVal : v;
                     }
                 }
                 else {
@@ -721,100 +980,165 @@ class StorefrontBlueprintService {
     static getCmsLocaleForTenant(tenantId) {
         return tenantId === 'default_tenant' ? 'en' : `en__${tenantId}`;
     }
-    /**
-     * Synchronize the StorefrontPage record with OpenExt's canonical Page collection.
-     * Also detects if the merchant edited the page's component array directly through OpenExt's Page Editor.
-     */
-    static async syncWithCmsPage(tenantId, storefrontDoc, blueprint, forceOverwriteCmsPage = false) {
-        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
-        if (!CmsPageModel) {
-            return storefrontDoc;
-        }
-        const locale = this.getCmsLocaleForTenant(tenantId);
-        let cmsPage = null;
+    static async findCmsPage(CmsPageModel, tenantId, storefrontDoc) {
         if (storefrontDoc.cmsPageId) {
             try {
-                cmsPage = await CmsPageModel.findById(storefrontDoc.cmsPageId);
+                const byId = await CmsPageModel.findById(storefrontDoc.cmsPageId);
+                if (byId)
+                    return byId;
             }
             catch {
-                cmsPage = null;
+                // invalid id: fall back to the slug
             }
         }
-        if (!cmsPage) {
-            cmsPage = await CmsPageModel.findOne({
-                slug: storefrontDoc.slug,
-                locale,
-                pageType: 'page',
-            });
-        }
-        if (!cmsPage) {
-            cmsPage = await CmsPageModel.create({
-                pageName: storefrontDoc.title,
-                pageType: 'page',
-                isPublished: Boolean(storefrontDoc.isPublished),
-                isHome: false,
-                isGlobal: false,
-                preHeading: blueprint.blueprintId,
-                description: storefrontDoc.description,
-                slug: storefrontDoc.slug,
-                locale,
-                translationGroupId: `${tenantId}:${blueprint.blueprintId}`,
-                seoName: storefrontDoc.title,
-                seoMeta: storefrontDoc.description,
-                component: this.toCmsPageComponents(storefrontDoc.pageType, storefrontDoc.blocks),
-                modifications: [],
-            });
-            storefrontDoc.cmsPageId = String(cmsPage._id);
-            await storefrontDoc.save();
+        return CmsPageModel.findOne({ slug: storefrontDoc.slug, locale: this.getCmsLocaleForTenant(tenantId), pageType: 'page' });
+    }
+    /**
+     * Reads the storefront page from OpenExt Pages, which own the layout. The OpenExt page is never written
+     * here: edits made in the page builder (blocks, text, order, title, published) are kept. Creates the
+     * page when it is missing. Records whether the content still matches what the plugin last wrote.
+     */
+    static async syncWithCmsPage(tenantId, storefrontDoc, blueprint) {
+        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
+        if (!CmsPageModel)
             return storefrontDoc;
+        const cmsPage = await this.findCmsPage(CmsPageModel, tenantId, storefrontDoc);
+        if (!cmsPage) {
+            return this.writeCmsLayout(tenantId, storefrontDoc, await buildPageComponents(storefrontDoc.pageType, storefrontDoc.blocks));
         }
-        // If not forcing overwrite from Storefront Admin, check if the merchant edited `cmsPage.component` via OpenExt Page Editor
-        if (!forceOverwriteCmsPage && Array.isArray(cmsPage.component) && cmsPage.component.length > 0) {
-            const validation = this.validateAndNormalizeBlocks(storefrontDoc.pageType, cmsPage.component);
-            if (validation.valid && validation.blocks) {
-                const cmsBlocksHash = this.computeBlocksHash(validation.blocks);
-                if (cmsBlocksHash !== storefrontDoc.currentConfigHash) {
-                    storefrontDoc.blocks = validation.blocks;
-                    storefrontDoc.currentConfigHash = cmsBlocksHash;
-                    storefrontDoc.isCustomized = cmsBlocksHash !== storefrontDoc.appliedBlueprintHash;
-                    storefrontDoc.lastCustomizedAt = storefrontDoc.isCustomized
-                        ? new Date()
-                        : storefrontDoc.lastCustomizedAt;
-                    storefrontDoc.revision = (Number(storefrontDoc.revision) || 1) + 1;
-                    await storefrontDoc.save();
-                }
+        const components = Array.isArray(cmsPage.component) ? cmsPage.component : [];
+        const currentHash = hashComponents(components);
+        let changed = false;
+        const set = (key, value) => {
+            if (storefrontDoc[key] !== value) {
+                storefrontDoc[key] = value;
+                changed = true;
             }
+        };
+        set('cmsPageId', String(cmsPage._id));
+        if (!storefrontDoc.appliedCmsHash) {
+            // Written by an older plugin version: untouched if it still equals what that version wrote.
+            const legacy = JSON.stringify(this.toCmsPageComponents(storefrontDoc.pageType, storefrontDoc.blocks));
+            if (JSON.stringify(components) === legacy)
+                set('appliedCmsHash', currentHash);
         }
-        // Ensure CMS Page stays aligned with StorefrontPage state
-        const expectedComponents = this.toCmsPageComponents(storefrontDoc.pageType, storefrontDoc.blocks);
-        const currentCmsComponentsJson = JSON.stringify(cmsPage.component || []);
-        const expectedCmsComponentsJson = JSON.stringify(expectedComponents);
-        let cmsNeedsSave = false;
-        if (String(storefrontDoc.cmsPageId || '') !== String(cmsPage._id)) {
-            storefrontDoc.cmsPageId = String(cmsPage._id);
+        const customized = !storefrontDoc.appliedCmsHash || currentHash !== storefrontDoc.appliedCmsHash;
+        if (customized && !storefrontDoc.isCustomized)
+            set('lastCustomizedAt', new Date());
+        set('isCustomized', customized);
+        if (storefrontDoc.currentConfigHash !== currentHash) {
+            set('currentConfigHash', currentHash);
+            set('revision', (Number(storefrontDoc.revision) || 1) + 1);
+            const ecommerceBlocks = extractEcommerceBlocks(components);
+            storefrontDoc.blocks = ecommerceBlocks;
+            storefrontDoc.markModified?.('blocks');
+        }
+        if (typeof cmsPage.pageName === 'string' && cmsPage.pageName.trim())
+            set('title', cmsPage.pageName.trim().slice(0, 120));
+        set('isPublished', Boolean(cmsPage.isPublished));
+        if (changed)
             await storefrontDoc.save();
-        }
-        if (cmsPage.pageName !== storefrontDoc.title) {
-            cmsPage.pageName = storefrontDoc.title;
-            cmsNeedsSave = true;
-        }
-        if (cmsPage.description !== storefrontDoc.description) {
-            cmsPage.description = storefrontDoc.description;
-            cmsNeedsSave = true;
-        }
-        if (Boolean(cmsPage.isPublished) !== Boolean(storefrontDoc.isPublished)) {
-            cmsPage.isPublished = Boolean(storefrontDoc.isPublished);
-            cmsNeedsSave = true;
-        }
-        if (currentCmsComponentsJson !== expectedCmsComponentsJson) {
-            cmsPage.component = expectedComponents;
-            cmsPage.markModified('component');
-            cmsNeedsSave = true;
-        }
-        if (cmsNeedsSave) {
-            await cmsPage.save();
-        }
         return storefrontDoc;
+    }
+    /** Writes the plugin's layout into the OpenExt page (create, upgrade of an untouched page, or reset). */
+    static async writeCmsLayout(tenantId, storefrontDoc, components, asPluginLayout = true) {
+        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
+        const hash = hashComponents(components);
+        if (CmsPageModel) {
+            let cmsPage = await this.findCmsPage(CmsPageModel, tenantId, storefrontDoc);
+            if (!cmsPage) {
+                cmsPage = await CmsPageModel.create({
+                    pageName: storefrontDoc.title,
+                    pageType: 'page',
+                    isPublished: Boolean(storefrontDoc.isPublished),
+                    isHome: false,
+                    isGlobal: false,
+                    preHeading: storefrontDoc.blueprintId,
+                    description: storefrontDoc.description,
+                    slug: storefrontDoc.slug,
+                    locale: this.getCmsLocaleForTenant(tenantId),
+                    translationGroupId: `${tenantId}:${storefrontDoc.blueprintId}`,
+                    seoName: storefrontDoc.title,
+                    seoMeta: storefrontDoc.description,
+                    component: components,
+                    modifications: [],
+                });
+            }
+            else {
+                cmsPage.component = components;
+                cmsPage.markModified?.('component');
+                cmsPage.pageName = storefrontDoc.title;
+                cmsPage.description = storefrontDoc.description;
+                cmsPage.isPublished = Boolean(storefrontDoc.isPublished);
+                await cmsPage.save();
+            }
+            storefrontDoc.cmsPageId = String(cmsPage._id);
+        }
+        if (asPluginLayout)
+            storefrontDoc.appliedCmsHash = hash;
+        storefrontDoc.currentConfigHash = hash;
+        storefrontDoc.isCustomized = hash !== storefrontDoc.appliedCmsHash;
+        storefrontDoc.blocks = extractEcommerceBlocks(components);
+        storefrontDoc.markModified?.('blocks');
+        await storefrontDoc.save();
+        return storefrontDoc;
+    }
+    /** Writes only the page title / description / published flag to the OpenExt page. */
+    static async writeCmsMeta(tenantId, storefrontDoc) {
+        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
+        if (!CmsPageModel)
+            return;
+        const cmsPage = await this.findCmsPage(CmsPageModel, tenantId, storefrontDoc);
+        if (!cmsPage)
+            return;
+        cmsPage.pageName = storefrontDoc.title;
+        cmsPage.description = storefrontDoc.description;
+        cmsPage.isPublished = Boolean(storefrontDoc.isPublished);
+        await cmsPage.save();
+    }
+    /**
+     * Replaces the Ecommerce blocks of the OpenExt page with `blocks` (plugin admin API), keeping the
+     * merchant's other OpenExt blocks where they are. The new Ecommerce blocks go where the first one was.
+     */
+    static async writeCmsEcommerceBlocks(tenantId, storefrontDoc, blocks) {
+        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
+        const current = CmsPageModel ? await this.findCmsPage(CmsPageModel, tenantId, storefrontDoc) : null;
+        const existing = Array.isArray(current?.component) ? current.component : [];
+        const next = [];
+        let inserted = false;
+        for (const c of existing) {
+            if (c && c.type === 'ecommerce-plugin') {
+                if (!inserted) {
+                    next.push(...blocks.filter((b) => b.enabled).map(pluginComponent));
+                    inserted = true;
+                }
+                continue;
+            }
+            next.push(c);
+        }
+        if (!inserted)
+            next.push(...blocks.filter((b) => b.enabled).map(pluginComponent));
+        await this.writeCmsLayout(tenantId, storefrontDoc, next, false);
+    }
+    /**
+     * Gives the storefront pages an owner. Pages are created at plugin start-up, when no one is signed in,
+     * so they have no `createdBy`; OpenExt's Pages list hides ownerless pages from most roles (and its
+     * search breaks on them). The first signed-in admin to use the plugin becomes their owner.
+     * Returns how many pages were updated.
+     */
+    static async adoptOwnerlessPages(tenantId, userId) {
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(userId) || String(userId).length !== 24)
+            return 0;
+        const CmsPageModel = await StorefrontPage_1.default.getCmsPageModel();
+        if (!CmsPageModel)
+            return 0;
+        const docs = await StorefrontPage_1.default.getModel().find({ tenantId, cmsPageId: { $ne: null } }).select('cmsPageId').lean();
+        const ids = docs.map((d) => String(d.cmsPageId)).filter((id) => mongoose.Types.ObjectId.isValid(id));
+        if (ids.length === 0)
+            return 0;
+        const result = await CmsPageModel.updateMany({ _id: { $in: ids }, $or: [{ createdBy: { $exists: false } }, { createdBy: null }] }, { $set: { createdBy: new mongoose.Types.ObjectId(userId) } });
+        return Number(result?.modifiedCount ?? result?.nModified ?? 0);
     }
     /**
      * Idempotently provisions all 4 default storefront pages for a tenant and handles safe blueprint version upgrades.
@@ -865,25 +1189,20 @@ class StorefrontBlueprintService {
                 }
             }
         }
-        // Sync any external edits made via OpenExt Page Editor first
-        doc = await this.syncWithCmsPage(tenantId, doc, blueprint, false);
+        // Read the OpenExt page first (it owns the layout); creates it when missing
+        doc = await this.syncWithCmsPage(tenantId, doc, blueprint);
         // Check if blueprint definition has a newer version than what was applied
         if (doc.appliedBlueprintVersion < blueprint.version) {
-            const wasUntouchedDefault = !doc.isCustomized && doc.currentConfigHash === doc.appliedBlueprintHash;
-            if (wasUntouchedDefault) {
-                // Safe automatic upgrade for untouched default pages
-                doc.blocks = cloneDeep(blueprint.blocks);
+            if (!doc.isCustomized) {
+                // Safe automatic upgrade for pages nobody edited in the page builder
                 doc.appliedBlueprintVersion = blueprint.version;
                 doc.appliedBlueprintHash = blueprintHash;
-                doc.currentConfigHash = blueprintHash;
-                doc.isCustomized = false;
                 doc.routePattern = blueprint.routePattern;
                 doc.isDynamicTemplate = blueprint.isDynamicTemplate;
                 doc.revision = (Number(doc.revision) || 1) + 1;
-                await doc.save();
-                doc = await this.syncWithCmsPage(tenantId, doc, blueprint, true);
+                doc = await this.writeCmsLayout(tenantId, doc, await buildPageComponents(pageType, blueprint.blocks));
             }
-            // If doc.isCustomized is true, we intentionally preserve the merchant's blocks, settings, and appliedBlueprintVersion!
+            // Edited pages keep the merchant's content; Settings → Storefront pages offers "Apply latest design".
         }
         return this.toDTO(doc, blueprint);
     }
@@ -926,21 +1245,19 @@ class StorefrontBlueprintService {
             ? payload.description.trim().slice(0, 400)
             : doc.description;
         const nextPublished = payload.isPublished !== undefined ? Boolean(payload.isPublished) : Boolean(doc.isPublished);
-        const nextHash = this.computeBlocksHash(nextBlocks);
-        const hasTitleOrDescCustomization = nextTitle !== blueprint.title || nextDescription !== blueprint.description;
-        const isCustomized = nextHash !== doc.appliedBlueprintHash || hasTitleOrDescCustomization;
         doc.title = nextTitle;
         doc.description = nextDescription;
         doc.isPublished = nextPublished;
-        doc.blocks = nextBlocks;
-        doc.currentConfigHash = nextHash;
-        doc.isCustomized = isCustomized;
-        if (isCustomized) {
-            doc.lastCustomizedAt = new Date();
-        }
         doc.revision = (Number(doc.revision) || 1) + 1;
-        await doc.save();
-        await this.syncWithCmsPage(tenantId, doc, blueprint, true);
+        if (payload.blocks !== undefined) {
+            await this.writeCmsEcommerceBlocks(tenantId, doc, nextBlocks);
+            doc.lastCustomizedAt = doc.isCustomized ? new Date() : doc.lastCustomizedAt;
+            await doc.save();
+        }
+        else {
+            await doc.save();
+            await this.writeCmsMeta(tenantId, doc);
+        }
         return {
             success: true,
             status: 200,
@@ -975,13 +1292,9 @@ class StorefrontBlueprintService {
         doc.isPublished = blueprint.defaultPublished;
         doc.appliedBlueprintVersion = blueprint.version;
         doc.appliedBlueprintHash = blueprintHash;
-        doc.currentConfigHash = blueprintHash;
-        doc.isCustomized = false;
         doc.lastResetAt = new Date();
-        doc.blocks = cloneDeep(blueprint.blocks);
         doc.revision = (Number(doc.revision) || 1) + 1;
-        await doc.save();
-        await this.syncWithCmsPage(tenantId, doc, blueprint, true);
+        await this.writeCmsLayout(tenantId, doc, await buildPageComponents(pageType, blueprint.blocks));
         return {
             success: true,
             status: 200,

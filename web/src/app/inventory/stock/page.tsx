@@ -99,7 +99,7 @@ function StockEditor() {
   };
 
   return (
-    <div className="space-y-5 pb-16">
+    <div className="space-y-5">
       <AdminPageHeader
         breadcrumbs={[{ label: 'Inventory', href: inventoryUrls.list() }, { label: 'Edit stock levels' }]}
         title="Edit stock levels"
@@ -205,7 +205,7 @@ function StockEditor() {
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+      <div className="sticky bottom-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
         <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6 lg:px-8">
           <span className="mr-auto text-xs text-muted-foreground">{dirty ? `${Object.keys(edits).length} change${Object.keys(edits).length === 1 ? '' : 's'} not saved` : 'No changes'}</span>
           <a

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { Alert02Icon, Delete02Icon, Edit02Icon, Location01Icon, ToggleOffIcon, ToggleOnIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { ApiError } from '@/lib/products/api';
 import { inventoryUrls, settingsUrls } from '@/lib/products/urls';
 import { deleteLocation, getLocation, hasCoordinates, updateLocation } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 function LocationDetail() {
   const id = useSearchParams().get('id') ?? '';
@@ -86,7 +87,7 @@ function LocationDetail() {
         try {
           await deleteLocation(l._id);
           toast.flash('Location deleted', l.name);
-          window.location.href = settingsUrls.locations();
+          navigate(settingsUrls.locations());
         } catch (err) {
           toast.error('Could not delete the location', err instanceof Error ? err.message : undefined);
         }

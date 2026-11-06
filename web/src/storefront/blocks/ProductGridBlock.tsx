@@ -1,427 +1,283 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { StorefrontShell, StorefrontLoadingState, StorefrontErrorState, StorefrontEmptyState } from '../components/StorefrontState';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import {
+  EditorHint,
+  ProductGridSkeleton,
+  SectionHeading,
+  StorefrontEmptyState,
+  StorefrontErrorState,
+  StorefrontShell,
+} from '../components/StorefrontState';
 import { ProductCard } from '../components/ProductCard';
 import { storefrontApiClient } from '../services/storefrontApiClient';
-import type {
-  BlockSettingsMap,
-  PublicCategoryDTO,
-  PublicProductDTO,
-  StorefrontBlockComponentProps,
-  StorefrontProductsQuery,
-} from '../types/storefront';
+import { addProductToCart } from '../cart/cartStore';
+import { storefrontLinks } from '../cart/links';
+import { priceBounds, shopFilters, useShopFilters } from '../cart/shopFilters';
+import { useCategories } from '../cart/storeData';
+import type { BlockSettingsMap, PublicProductDTO, StorefrontBlockComponentProps, StorefrontProductsQuery } from '../types/storefront';
 
-function getVisiblePageNumbers(current: number, total: number): (number | 'ellipsis')[] {
-  if (total <= 7) {
-    return Array.from({ length: total }, (_, i) => i + 1);
-  }
-  const pages: (number | 'ellipsis')[] = [];
-  if (current <= 4) {
-    for (let i = 1; i <= 5; i++) pages.push(i);
-    pages.push('ellipsis');
-    pages.push(total);
-  } else if (current >= total - 3) {
-    pages.push(1);
-    pages.push('ellipsis');
-    for (let i = total - 4; i <= total; i++) pages.push(i);
-  } else {
-    pages.push(1);
-    pages.push('ellipsis');
-    pages.push(current - 1);
-    pages.push(current);
-    pages.push(current + 1);
-    pages.push('ellipsis');
-    pages.push(total);
-  }
-  return pages;
+/**
+ * Columns follow the width of the block itself (container queries), so a grid placed in a narrow page
+ * builder column steps down instead of squeezing four cards into it.
+ */
+const COLS_MOBILE: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2' };
+const COLS_TABLET: Record<number, string> = { 1: '@xl:grid-cols-1', 2: '@xl:grid-cols-2', 3: '@xl:grid-cols-3', 4: '@xl:grid-cols-4' };
+const COLS_DESKTOP: Record<number, string> = { 2: '@4xl:grid-cols-2', 3: '@4xl:grid-cols-3', 4: '@4xl:grid-cols-4', 5: '@4xl:grid-cols-5', 6: '@4xl:grid-cols-6' };
+
+export function gridColumns(desktop: number, tablet: number, mobile: number): string {
+  return cn('grid gap-4 sm:gap-6', COLS_MOBILE[mobile] || COLS_MOBILE[2], COLS_TABLET[tablet] || COLS_TABLET[2], COLS_DESKTOP[desktop] || COLS_DESKTOP[4]);
 }
 
-export function ProductGridBlock({
-  block,
-  settings,
-  isEditing,
-}: StorefrontBlockComponentProps<BlockSettingsMap>) {
-  // Extract and normalize settings
+function visiblePages(current: number, total: number): (number | 'gap')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  if (current <= 4) return [1, 2, 3, 4, 5, 'gap', total];
+  if (current >= total - 3) return [1, 'gap', total - 4, total - 3, total - 2, total - 1, total];
+  return [1, 'gap', current - 1, current, current + 1, 'gap', total];
+}
+
+const num = (v: unknown, fallback: number, min: number, max: number) => {
+  const n = Number(v);
+  return Math.min(max, Math.max(min, Number.isFinite(n) && n > 0 ? n : fallback));
+};
+
+export function ProductGridBlock({ block, settings, isEditing }: StorefrontBlockComponentProps<BlockSettingsMap>) {
   const source = String(settings.source || 'all').toLowerCase();
-  const categoryId = typeof settings.categoryId === 'string' ? settings.categoryId.trim() : '';
-  const selectedProductIds =
-    typeof settings.selectedProductIds === 'string' ? settings.selectedProductIds.trim() : '';
-  const sort = (typeof settings.sort === 'string' ? settings.sort : 'newest') as StorefrontProductsQuery['sort'];
+  const categoryId = String(settings.categoryId || '').trim();
+  const selectedProductIds = String(settings.selectedProductIds || '').trim();
+  const sort = (String(settings.sort || 'newest') || 'newest') as StorefrontProductsQuery['sort'];
+  const pageSize = num(settings.pageSize, 12, 1, 48);
+  const columnsDesktop = num(settings.columnsDesktop, 4, 2, 6);
+  const columnsTablet = num(settings.columnsTablet, 2, 1, 4);
+  const columnsMobile = num(settings.columnsMobile, 2, 1, 2);
+  const showPagination = settings.showPagination !== false;
+  const heading = String(settings.heading || '');
+  const description = String(settings.description || '');
+  const flag = (key: string, alias?: string) =>
+    settings[key] !== undefined ? Boolean(settings[key]) : alias && settings[alias] !== undefined ? Boolean(settings[alias]) : true;
+  const showAddToCart = settings.showAddToCart !== undefined ? Boolean(settings.showAddToCart) : settings.cardAction !== 'view_only';
 
-  const pageSize = Math.min(
-    48,
-    Math.max(1, typeof settings.pageSize === 'number' && Number.isFinite(settings.pageSize) ? settings.pageSize : 12)
-  );
+  const filters = useShopFilters();
+  const followsFilter = source !== 'category' && source !== 'selected' && source !== 'latest';
+  const filterCategory = followsFilter ? filters.category : '';
+  const filterQuery = followsFilter ? filters.q : '';
+  const filterSort = followsFilter ? filters.sort : '';
+  const filterPrice = followsFilter ? filters.price : '';
 
-  const rawColsDesktop = Number(settings.columnsDesktop);
-  const columnsDesktop = Math.min(
-    6,
-    Math.max(1, Number.isFinite(rawColsDesktop) && rawColsDesktop > 0 ? rawColsDesktop : 4)
-  );
+  const categories = useCategories();
+  const categoryName = (id: string | null) => (id ? categories.find((c) => c.id === id)?.name : undefined);
 
-  const rawColsTablet = Number(settings.columnsTablet);
-  const columnsTablet = Math.min(
-    4,
-    Math.max(1, Number.isFinite(rawColsTablet) && rawColsTablet > 0 ? rawColsTablet : 2)
-  );
-
-  const rawColsMobile = Number(settings.columnsMobile);
-  const columnsMobile = Math.min(
-    2,
-    Math.max(1, Number.isFinite(rawColsMobile) && rawColsMobile > 0 ? rawColsMobile : 1)
-  );
-
-  // Card display toggles (supporting both new keys and Milestone 2 blueprint aliases)
-  const showCategory = settings.showCategory !== undefined ? Boolean(settings.showCategory) : true;
-  const showSku = Boolean(settings.showSku);
-  const showComparePrice =
-    settings.showComparePrice !== undefined
-      ? Boolean(settings.showComparePrice)
-      : settings.showCompareAtPrice !== undefined
-        ? Boolean(settings.showCompareAtPrice)
-        : true;
-  const showDiscountBadge =
-    settings.showDiscountBadge !== undefined ? Boolean(settings.showDiscountBadge) : true;
-  const showStock =
-    settings.showStock !== undefined
-      ? Boolean(settings.showStock)
-      : settings.showStockBadge !== undefined
-        ? Boolean(settings.showStockBadge)
-        : true;
-  const showAddToCart =
-    settings.showAddToCart !== undefined
-      ? Boolean(settings.showAddToCart)
-      : settings.cardAction !== undefined
-        ? settings.cardAction !== 'view_only'
-        : true;
-
-  // Component states
   const [products, setProducts] = useState<PublicProductDTO[]>([]);
-  const [categoryMap, setCategoryMap] = useState<Map<string, string>>(new Map());
-  const [currencySymbol, setCurrencySymbol] = useState<string>('₹');
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const [totalPages, setTotalPages] = useState<number>(1);
-  const [totalCount, setTotalCount] = useState<number>(0);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [pageChanging, setPageChanging] = useState<boolean>(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [pageChanging, setPageChanging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Track latest request token and AbortController to prevent race conditions / stale responses
-  const activeRequestRef = useRef<number>(0);
-  const activeAbortRef = useRef<AbortController | null>(null);
-
-  // 1. Fetch metadata (categories & store currency) once on mount
-  useEffect(() => {
-    let isCancelled = false;
-    const controller = new AbortController();
-
-    Promise.all([
-      storefrontApiClient.getCategories({ signal: controller.signal }).catch(() => null),
-      storefrontApiClient.getSettings({ signal: controller.signal }).catch(() => null),
-    ]).then(([catRes, setRes]) => {
-      if (isCancelled) return;
-      if (catRes?.categories && Array.isArray(catRes.categories)) {
-        const map = new Map<string, string>();
-        for (const c of catRes.categories) {
-          map.set(c.id, c.name);
-        }
-        setCategoryMap(map);
-      }
-      if (setRes?.settings?.currencySymbol) {
-        setCurrencySymbol(setRes.settings.currencySymbol);
-      }
-    });
-
-    return () => {
-      isCancelled = true;
-      controller.abort();
-    };
-  }, []);
-
-  // 2. Fetch products based on settings and target page
   const fetchProducts = useCallback(
-    (targetPage: number, isInitial: boolean = false) => {
-      // Cancel previous in-flight products request
-      if (activeAbortRef.current) {
-        activeAbortRef.current.abort();
-      }
+    (targetPage: number, initial = false) => {
+      abortRef.current?.abort();
       const controller = new AbortController();
-      activeAbortRef.current = controller;
-
-      const requestId = ++activeRequestRef.current;
-      if (isInitial) {
-        setLoading(true);
-      } else {
-        setPageChanging(true);
-      }
+      abortRef.current = controller;
+      const requestId = ++requestRef.current;
+      if (initial) setLoading(true);
+      else setPageChanging(true);
       setError(null);
 
-      const query: StorefrontProductsQuery = {
-        page: targetPage,
-        limit: pageSize,
+      const finishEmpty = () => {
+        setProducts([]);
+        setTotalCount(0);
+        setTotalPages(0);
+        setLoading(false);
+        setPageChanging(false);
       };
 
-      // Source routing
+      const query: StorefrontProductsQuery = { page: targetPage, limit: pageSize };
       if (source === 'category') {
-        if (!categoryId) {
-          // No category configured
-          if (activeRequestRef.current === requestId) {
-            setProducts([]);
-            setTotalCount(0);
-            setTotalPages(0);
-            setLoading(false);
-            setPageChanging(false);
-          }
-          return;
-        }
+        if (!categoryId) return finishEmpty();
         query.categoryId = categoryId;
-        query.sort = sort || 'newest';
+        query.sort = sort;
       } else if (source === 'selected') {
-        const ids = selectedProductIds
-          .split(',')
-          .map((id) => id.trim())
-          .filter((id) => id.length === 24);
-
-        if (ids.length === 0) {
-          if (activeRequestRef.current === requestId) {
-            setProducts([]);
-            setTotalCount(0);
-            setTotalPages(0);
-            setLoading(false);
-            setPageChanging(false);
-          }
-          return;
-        }
+        const ids = selectedProductIds.split(',').map((id) => id.trim()).filter((id) => /^[a-f0-9]{24}$/i.test(id));
+        if (ids.length === 0) return finishEmpty();
         query.ids = ids;
-        // Only attach sort if it's explicitly non-default (e.g. price_asc, price_desc, name_asc, name_desc)
-        // This prevents the default 'newest' sort from silently overriding configured selected product order!
-        if (sort && ['price_asc', 'price_desc', 'name_asc', 'name_desc'].includes(sort)) {
-          query.sort = sort;
-        }
+        // Keep the order the merchant typed unless another sort was chosen.
+        if (sort && sort !== 'newest') query.sort = sort;
       } else if (source === 'latest') {
         query.sort = 'newest';
       } else {
-        // 'all' or fallback
-        query.sort = sort || 'newest';
+        query.sort = filterSort || sort;
+        if (filterCategory) query.categoryId = filterCategory;
+        if (filterQuery) query.search = filterQuery;
+        Object.assign(query, priceBounds(filterPrice));
       }
 
       storefrontApiClient
         .getProducts(query, { signal: controller.signal })
         .then((res) => {
-          if (activeRequestRef.current !== requestId) return; // Stale response ignored
+          if (requestRef.current !== requestId) return;
           setProducts(res.products || []);
           setTotalCount(res.pagination?.total ?? 0);
+          if (followsFilter) shopFilters.setTotal(res.pagination?.total ?? 0);
           setTotalPages(Math.max(1, res.pagination?.totalPages ?? 1));
-          setCurrentPage(res.pagination?.page ?? targetPage);
+          setPage(res.pagination?.page ?? targetPage);
           setLoading(false);
           setPageChanging(false);
         })
         .catch((err: unknown) => {
           if (err instanceof DOMException && err.name === 'AbortError') return;
-          if (activeRequestRef.current !== requestId) return;
-          const msg =
-            err instanceof Error && err.message
-              ? err.message
-              : 'Unable to load products. Please try again.';
-          setError(msg);
+          if (requestRef.current !== requestId) return;
+          setError(err instanceof Error && err.message ? err.message : 'Unable to load products.');
           setLoading(false);
           setPageChanging(false);
         });
     },
-    [source, categoryId, selectedProductIds, sort, pageSize]
+    [source, categoryId, selectedProductIds, sort, pageSize, filterCategory, filterQuery, filterSort, filterPrice, followsFilter]
   );
 
-  // Trigger initial fetch or re-fetch when query settings change
   useEffect(() => {
-    setCurrentPage(1);
+    setPage(1);
     fetchProducts(1, true);
-    return () => {
-      if (activeAbortRef.current) {
-        activeAbortRef.current.abort();
-      }
-    };
+    return () => abortRef.current?.abort();
   }, [fetchProducts]);
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > totalPages || newPage === currentPage || pageChanging) {
-      return;
-    }
-    fetchProducts(newPage, false);
+  const goTo = (target: number) => {
+    if (target < 1 || target > totalPages || target === page || pageChanging) return;
+    fetchProducts(target);
+    const top = wrapRef.current?.getBoundingClientRect().top ?? 0;
+    if (top < 0) wrapRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  // Reusable Add to Cart contract (infrastructure-ready for Milestone 11)
-  const handleAddToCart = (productId: string) => {
-    // In Milestone 5, ProductGrid satisfies the callback contract.
-    // Real cart drawer/order state will be wired in Milestone 11.
-    if (typeof window !== 'undefined' && (window as any).__ECOMMERCE_CART_HANDLER__) {
-      (window as any).__ECOMMERCE_CART_HANDLER__(productId);
-    }
+  const onAdd = (productId: string) => {
+    const product = products.find((p) => p.id === productId);
+    if (product && !isEditing) addProductToCart(product);
   };
 
-  // ----------------------------------------------------
-  // Render States
-  // ----------------------------------------------------
+  const grid = gridColumns(columnsDesktop, columnsTablet, columnsMobile);
+  const filtered = Boolean(filterCategory || filterQuery || filterPrice);
 
-  // A. Initial Loading State
+  let body: React.ReactNode;
   if (loading) {
-    return (
-      <StorefrontShell>
-        <StorefrontLoadingState label="Loading catalog products..." />
-      </StorefrontShell>
+    body = <ProductGridSkeleton count={Math.min(pageSize, columnsDesktop * 2)} className={grid} />;
+  } else if (error) {
+    body = <StorefrontErrorState title="Products couldn't load" message="Please try again in a moment." onRetry={() => fetchProducts(page, true)} />;
+  } else if (products.length === 0 && filtered) {
+    body = (
+      <StorefrontEmptyState
+        title="No products match"
+        description={filterQuery ? `Nothing found for "${filterQuery}". Try another word or remove a filter.` : 'Try another category or price range.'}
+        action={
+          <Button variant="outline" className="cursor-pointer" onClick={() => shopFilters.clear()}>
+            Show all products
+          </Button>
+        }
+      />
     );
-  }
-
-  // B. Error State
-  if (error) {
-    return (
-      <StorefrontShell>
-        <StorefrontErrorState
-          title="Catalog Error"
-          message="Unable to display products at this time."
-          onRetry={() => fetchProducts(currentPage, true)}
-        />
-      </StorefrontShell>
-    );
-  }
-
-  // C. Empty Catalog State
-  if (products.length === 0) {
-    let emptyTitle = 'No Products Found';
-    let emptyDesc = 'Check back soon once new items are published in the catalog.';
-
-    if (source === 'category' && !categoryId) {
-      emptyTitle = isEditing ? 'No Category Selected' : 'No Products Available';
-      emptyDesc = isEditing
-        ? 'Please configure a valid Category ID in the block settings.'
-        : 'There are currently no products available in this section.';
-    } else if (source === 'selected' && !selectedProductIds) {
-      emptyTitle = isEditing ? 'No Products Selected' : 'No Products Available';
-      emptyDesc = isEditing
-        ? 'Please enter one or more product IDs in block settings.'
-        : 'There are currently no featured items available.';
-    }
-
-    return (
-      <StorefrontShell>
-        {isEditing && (
-          <div className="ecom-sf-grid-editor-bar mb-4">
-            <span className="font-semibold">Product Grid Block ({block.label})</span>
-            <div className="ecom-sf-grid-editor-tags">
-              <span className="ecom-sf-grid-editor-tag">source: {source}</span>
-              <span className="ecom-sf-grid-editor-tag">status: empty</span>
-            </div>
-          </div>
-        )}
-        <StorefrontEmptyState title={emptyTitle} description={emptyDesc} />
-      </StorefrontShell>
-    );
-  }
-
-  // D. Populated Product Grid
-  const gridStyle = {
-    '--grid-cols-desktop': columnsDesktop,
-    '--grid-cols-tablet': columnsTablet,
-    '--grid-cols-mobile': columnsMobile,
-  } as React.CSSProperties;
-
-  return (
-    <StorefrontShell>
-      <div className="ecom-sf-product-grid-wrap" data-block-id={block.id}>
-        {/* Editor Mode Guidance Bar */}
-        {isEditing && (
-          <aside className="ecom-sf-grid-editor-bar" aria-label="Editor block settings">
-            <span className="font-semibold">{block.label}</span>
-            <div className="ecom-sf-grid-editor-tags">
-              <span className="ecom-sf-grid-editor-tag">source: {source}</span>
-              <span className="ecom-sf-grid-editor-tag">sort: {sort || 'newest'}</span>
-              <span className="ecom-sf-grid-editor-tag">{totalCount} total products</span>
-              <span className="ecom-sf-grid-editor-tag">
-                grid: {columnsDesktop}D / {columnsTablet}T / {columnsMobile}M
-              </span>
-            </div>
-          </aside>
-        )}
-
-        {/* Results Header */}
-        <div className="ecom-sf-product-grid-header">
-          <p className="ecom-sf-product-grid-count">
-            Showing {products.length} of {totalCount} {totalCount === 1 ? 'product' : 'products'}
-          </p>
-          {totalPages > 1 && (
-            <span className="text-xs text-muted-foreground font-medium">
-              Page {currentPage} of {totalPages}
-            </span>
-          )}
-        </div>
-
-        {/* Responsive Grid of ProductCards */}
-        <div
-          className={`ecom-sf-product-grid ${pageChanging ? 'ecom-sf-product-grid-loading-overlay' : ''}`}
-          style={gridStyle}
-          role="region"
-          aria-label="Products catalog grid"
-          aria-busy={pageChanging}
-        >
+  } else if (products.length === 0) {
+    const unset = (source === 'category' && !categoryId) || (source === 'selected' && !selectedProductIds);
+    body =
+      isEditing && unset ? (
+        <EditorHint>{source === 'category' ? 'Choose a category for this grid in its settings.' : 'Enter product IDs for this grid in its settings.'}</EditorHint>
+      ) : (
+        <StorefrontEmptyState title="No products yet" description="New products will appear here once they're published." />
+      );
+  } else {
+    body = (
+      <>
+        <div className={cn(grid, 'transition-opacity', pageChanging && 'pointer-events-none opacity-50')} aria-busy={pageChanging}>
           {products.map((product) => (
             <ProductCard
               key={product.id}
               product={product}
-              categoryName={product.categoryId ? categoryMap.get(product.categoryId) : undefined}
-              currencySymbol={currencySymbol}
-              showCategory={showCategory}
-              showSku={showSku}
-              showComparePrice={showComparePrice}
-              showDiscountBadge={showDiscountBadge}
-              showStock={showStock}
+              categoryName={categoryName(product.categoryId)}
+              showCategory={flag('showCategory')}
+              showSku={Boolean(settings.showSku)}
+              showComparePrice={flag('showComparePrice', 'showCompareAtPrice')}
+              showDiscountBadge={flag('showDiscountBadge')}
+              showStock={flag('showStock', 'showStockBadge')}
               showAddToCart={showAddToCart}
-              onAddToCart={handleAddToCart}
+              imageAspect={String(settings.imageAspect || 'square')}
+              onAddToCart={onAdd}
+              href={storefrontLinks.product(product.slug || product.id)}
             />
           ))}
         </div>
-
-        {/* Bounded Pagination Controls */}
-        {totalPages > 1 && (
-          <nav className="ecom-sf-pagination" aria-label="Product catalog navigation">
-            <button
-              type="button"
-              className="ecom-sf-pagination-btn"
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage <= 1 || pageChanging}
-              aria-label="Go to previous page"
-            >
-              Previous
-            </button>
-
-            {getVisiblePageNumbers(currentPage, totalPages).map((p, idx) =>
-              p === 'ellipsis' ? (
-                <span key={`ellipsis-${idx}`} className="ecom-sf-pagination-ellipsis" aria-hidden="true">
-                  &hellip;
-                </span>
-              ) : (
-                <button
-                  key={p}
-                  type="button"
-                  className={`ecom-sf-pagination-btn ${p === currentPage ? 'ecom-sf-pagination-btn-active' : ''}`}
-                  onClick={() => handlePageChange(p)}
-                  disabled={pageChanging}
-                  aria-current={p === currentPage ? 'page' : undefined}
-                  aria-label={`Go to page ${p}`}
-                >
-                  {p}
-                </button>
-              )
-            )}
-
-            <button
-              type="button"
-              className="ecom-sf-pagination-btn"
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage >= totalPages || pageChanging}
-              aria-label="Go to next page"
-            >
-              Next
-            </button>
-          </nav>
+        {showPagination && totalPages > 1 && (
+          <Pagination className="mt-10" aria-label="Product pages">
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  href="#"
+                  className={cn('ecom-sf-pagination-btn', page <= 1 && 'pointer-events-none opacity-50')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    goTo(page - 1);
+                  }}
+                />
+              </PaginationItem>
+              {visiblePages(page, totalPages).map((p, i) =>
+                p === 'gap' ? (
+                  <PaginationItem key={`gap-${i}`} className="hidden sm:block">
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                ) : (
+                  <PaginationItem key={p} className={cn(p !== page && 'hidden sm:block')}>
+                    <PaginationLink
+                      href="#"
+                      isActive={p === page}
+                      className="ecom-sf-pagination-btn"
+                      aria-label={`Page ${p}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        goTo(p);
+                      }}
+                    >
+                      {p}
+                    </PaginationLink>
+                  </PaginationItem>
+                )
+              )}
+              <PaginationItem>
+                <PaginationNext
+                  href="#"
+                  className={cn('ecom-sf-pagination-btn', page >= totalPages && 'pointer-events-none opacity-50')}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    goTo(page + 1);
+                  }}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
         )}
+      </>
+    );
+  }
+
+  return (
+    <StorefrontShell>
+      <div ref={wrapRef} className="@container scroll-mt-24" data-block-id={block.id} id={followsFilter ? 'ecom-sf-catalog' : undefined}>
+        <SectionHeading title={heading} description={description} />
+        {!loading && !error && products.length > 0 && settings.showResultCount !== false && (
+          <p className="mb-4 text-sm text-muted-foreground">
+            Showing {products.length} of {totalCount} {totalCount === 1 ? 'product' : 'products'}
+            {totalPages > 1 ? ` · Page ${page} of ${totalPages}` : ''}
+          </p>
+        )}
+        {body}
       </div>
     </StorefrontShell>
   );

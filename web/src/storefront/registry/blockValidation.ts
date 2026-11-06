@@ -192,10 +192,13 @@ export function validateStorefrontBlock<TSettings extends BlockSettingsMap = Blo
             `Invalid number for setting "${spec.label}" on block "${id}". Reverted to default.`
           );
         }
-      } else if (spec.type === 'string') {
+      } else if (spec.type === 'string' || spec.type === 'text') {
         if (rawVal !== undefined && rawVal !== null) {
-          normalizedSettings[key] = String(rawVal).trim().slice(0, 240);
+          normalizedSettings[key] = String(rawVal).trim().slice(0, spec.type === 'text' ? 2000 : 240);
         }
+      } else if (spec.type === 'color') {
+        const v = String(rawVal ?? '').trim();
+        if (v === '' || /^#[0-9a-f]{3,8}$/i.test(v)) normalizedSettings[key] = v;
       } else if (spec.type === 'select') {
         const allowed = (spec.options || []).map((o) => o.value);
         const match = allowed.find((val) => String(val) === String(rawVal));

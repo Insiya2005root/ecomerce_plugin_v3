@@ -120,6 +120,8 @@ export interface StorefrontProductsQuery {
   page?: number;
   limit?: number;
   ids?: string[];
+  minPrice?: number;
+  maxPrice?: number;
 }
 
 export interface StorefrontProductsResponse {
@@ -136,11 +138,13 @@ export interface StorefrontProductDetailResponse {
 export interface StorefrontBlockFieldSpec {
   key: string;
   label: string;
-  type: 'boolean' | 'number' | 'string' | 'select';
+  type: 'boolean' | 'number' | 'string' | 'text' | 'select' | 'color';
   description?: string;
   min?: number;
   max?: number;
   options?: Array<{ label: string; value: string | number }>;
+  /** Show this field only while another setting has one of these values. */
+  showWhen?: { key: string; equals: Array<string | number | boolean> };
 }
 
 export interface StorefrontBlockConfig {

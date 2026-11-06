@@ -1,0 +1,400 @@
+diff --git a/src/app/api/dashboard/plugins/get-plugins/route.ts b/src/app/api/dashboard/plugins/get-plugins/route.ts
+index cee4b2c..3c575e6 100644
+--- a/src/app/api/dashboard/plugins/get-plugins/route.ts
++++ b/src/app/api/dashboard/plugins/get-plugins/route.ts
+@@ -2,9 +2,43 @@ import { NextResponse } from 'next/server';
+ import { getUserDbConnection, getPluginModel } from '@/utils/db';
+ import { handleApiError } from '@/lib/api/response';
+ import { requireRbac } from '@/lib/rbac';
++import { getAuthUser } from '@/lib/api/auth';
++
++/**
++ * Fields a logged-out visitor needs to render plugin blocks on public pages (PluginContext registers
++ * blocks from these). Admin pages, server entry, permissions, hooks and errors are never sent.
++ */
++const PUBLIC_BLOCK_FIELDS = [
++  'pluginId',
++  'name',
++  'version',
++  'description',
++  'icon',
++  'type',
++  'kind',
++  'isActive',
++  'entryPoint',
++  'blockEntry',
++  'customElement',
++  'styles',
++  'source',
++] as const;
++
++function toPublicBlockPlugin(plugin: { toObject?: () => unknown }) {
++  const row = (typeof plugin.toObject === 'function' ? plugin.toObject() : plugin) as Record<string, unknown>;
++  return Object.fromEntries(PUBLIC_BLOCK_FIELDS.filter((k) => row[k] !== undefined).map((k) => [k, row[k]]));
++}
+ 
+ export async function GET() {
+   try {
++    const user = await getAuthUser();
++    if (!user) {
++      await getUserDbConnection();
++      const PluginModel = getPluginModel();
++      const plugins = await PluginModel.find({ isActive: true }).sort({ createdAt: -1 });
++      return NextResponse.json({ plugins: plugins.map(toPublicBlockPlugin) }, { status: 200 });
++    }
++
+     await requireRbac();
+     await getUserDbConnection();
+     const PluginModel = getPluginModel();
+diff --git a/src/components/editor/Right-Sidebar/properties/element-properties.tsx b/src/components/editor/Right-Sidebar/properties/element-properties.tsx
+index 07b789f..a510f98 100644
+--- a/src/components/editor/Right-Sidebar/properties/element-properties.tsx
++++ b/src/components/editor/Right-Sidebar/properties/element-properties.tsx
+@@ -41,6 +41,7 @@ import { CustomBlockProperties } from './CustomBlockProperties';
+ import { MenuPluginProperties } from './MenuPluginProperties';
+ import { SliderPluginProperties } from './SliderPluginProperties';
+ import { SocialPluginProperties } from './SocialPluginProperties';
++import { PluginSchemaSettings } from './PluginSchemaSettings';
+ import { NavbarProperties } from './NavbarProperties';
+ import { TextBlockProperties } from './standard/TextBlockProperties';
+ import { ImageBlockProperties } from './standard/ImageBlockProperties';
+@@ -1129,7 +1130,7 @@ export default function ElementProperties() {
+                 );
+               }
+ 
+-              return (
++              const jsonConfiguration = (
+                 <div className="space-y-2">
+                   <Label className="text-[10px] text-muted-foreground uppercase">
+                     JSON Configuration
+@@ -1142,6 +1143,16 @@ export default function ElementProperties() {
+                   />
+                 </div>
+               );
++
++              // Uploaded plugins can describe their block settings; show a form instead of raw JSON.
++              return (
++                <PluginSchemaSettings
++                  pluginId={ext?.id || selectedBlock!.type}
++                  block={selectedBlock!}
++                  onContentChange={handleContentChange}
++                  fallback={jsonConfiguration}
++                />
++              );
+             })()}
+ 
+             <div className="space-y-2 border-t pt-3 mt-3">
+diff --git a/src/components/editor/Right-Sidebar/properties/PluginSchemaSettings.tsx b/src/components/editor/Right-Sidebar/properties/PluginSchemaSettings.tsx
+new file mode 100644
+index 0000000..76cb4bf
+--- /dev/null
++++ b/src/components/editor/Right-Sidebar/properties/PluginSchemaSettings.tsx
+@@ -0,0 +1,308 @@
++'use client';
++
++import React, { useEffect, useMemo, useState } from 'react';
++import { Label } from '@/components/ui/label';
++import { Input } from '@/components/ui/input';
++import { Switch } from '@/components/ui/switch';
++import {
++  Select,
++  SelectContent,
++  SelectItem,
++  SelectTrigger,
++  SelectValue,
++} from '@/components/ui/select';
++import type { BlockData } from '@/types/index';
++
++/**
++ * Settings form for uploaded plugin blocks that describe their settings.
++ *
++ * A plugin opts in by adding `getSettingsSchema()` next to `mount`/`unmount` on
++ * `window.__NEXTCMS_PLUGINS__[pluginId]`. The block's `content` holds
++ * `{"blockType": "...", "settings": {...}}`, which the plugin's `mount` reads back.
++ * Plugins without a schema keep the raw JSON box (`fallback`).
++ */
++
++type FieldValue = string | number | boolean;
++
++export interface PluginSettingsField {
++  key: string;
++  label: string;
++  type: 'boolean' | 'number' | 'string' | 'text' | 'select' | 'color';
++  description?: string;
++  placeholder?: string;
++  min?: number;
++  max?: number;
++  step?: number;
++  options?: Array<{ label: string; value: FieldValue }>;
++  /** Show the field only while another setting has one of these values. */
++  showWhen?: { key: string; equals: FieldValue[] };
++}
++
++export interface PluginBlockSchema {
++  value: string;
++  label: string;
++  description?: string;
++  fields: PluginSettingsField[];
++  defaults?: Record<string, unknown>;
++}
++
++export interface PluginSettingsSchema {
++  blockTypes: PluginBlockSchema[];
++}
++
++type SchemaSource = { getSettingsSchema?: () => PluginSettingsSchema | Promise<PluginSettingsSchema> };
++
++function getSchemaSource(pluginId: string): SchemaSource | undefined {
++  if (typeof window === 'undefined') return undefined;
++  const registry = (window as unknown as { __NEXTCMS_PLUGINS__?: Record<string, SchemaSource> }).__NEXTCMS_PLUGINS__;
++  return registry?.[pluginId];
++}
++
++/** Waits for the plugin script (loaded by the block on the canvas) and reads its schema. */
++function usePluginSchema(pluginId: string) {
++  const [schema, setSchema] = useState<PluginSettingsSchema | null>(null);
++  const [settled, setSettled] = useState(false);
++
++  useEffect(() => {
++    let cancelled = false;
++    let tries = 0;
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    setSchema(null);
++    setSettled(false);
++
++    const attempt = async () => {
++      const source = getSchemaSource(pluginId);
++      if (typeof source?.getSettingsSchema === 'function') {
++        try {
++          const result = await source.getSettingsSchema();
++          if (!cancelled && result && Array.isArray(result.blockTypes)) setSchema(result);
++        } catch (error) {
++          console.warn(`Plugin ${pluginId} settings schema failed to load`, error);
++        }
++        if (!cancelled) setSettled(true);
++        return;
++      }
++      // Script loaded but the plugin has no schema: keep the JSON box.
++      if (source) {
++        if (!cancelled) setSettled(true);
++        return;
++      }
++      tries += 1;
++      if (tries >= 25) {
++        if (!cancelled) setSettled(true);
++        return;
++      }
++      timer = setTimeout(attempt, 200);
++    };
++    attempt();
++
++    return () => {
++      cancelled = true;
++      if (timer) clearTimeout(timer);
++    };
++  }, [pluginId]);
++
++  return { schema, settled };
++}
++
++function readBlockConfig(block: BlockData): { blockType: string; settings: Record<string, unknown>; rest: Record<string, unknown> } {
++  const legacy = block as BlockData & { blockType?: string; settings?: Record<string, unknown> };
++  let parsed: Record<string, unknown> = {};
++  if (typeof block.content === 'string' && block.content.trim().startsWith('{')) {
++    try {
++      const value = JSON.parse(block.content);
++      if (value && typeof value === 'object' && !Array.isArray(value)) parsed = value;
++    } catch {
++      parsed = {};
++    }
++  }
++  const { blockType, settings, ...rest } = parsed;
++  return {
++    blockType: typeof blockType === 'string' ? blockType : legacy.blockType || '',
++    settings:
++      settings && typeof settings === 'object' && !Array.isArray(settings)
++        ? (settings as Record<string, unknown>)
++        : legacy.settings && typeof legacy.settings === 'object'
++          ? { ...legacy.settings }
++          : {},
++    rest,
++  };
++}
++
++interface PluginSchemaSettingsProps {
++  pluginId: string;
++  block: BlockData;
++  onContentChange: (content: string) => void;
++  /** Rendered when the plugin has no schema, and under "Advanced" when it does. */
++  fallback: React.ReactNode;
++}
++
++export function PluginSchemaSettings({ pluginId, block, onContentChange, fallback }: PluginSchemaSettingsProps) {
++  const { schema, settled } = usePluginSchema(pluginId);
++  const config = useMemo(() => readBlockConfig(block), [block]);
++
++  if (!schema) {
++    return settled ? <>{fallback}</> : <p className="text-xs text-muted-foreground">Loading block settings…</p>;
++  }
++
++  const current = schema.blockTypes.find((t) => t.value === config.blockType);
++  const defaults = current?.defaults || {};
++  const valueOf = (key: string): unknown => (key in config.settings ? config.settings[key] : defaults[key]);
++
++  const write = (blockType: string, settings: Record<string, unknown>) => {
++    onContentChange(JSON.stringify({ ...config.rest, blockType, settings }));
++  };
++  const setField = (key: string, value: unknown) => {
++    const next = { ...config.settings };
++    if (value === undefined) delete next[key];
++    else next[key] = value;
++    write(config.blockType, next);
++  };
++
++  const visibleFields = (current?.fields || []).filter(
++    (f) => !f.showWhen || f.showWhen.equals.includes(valueOf(f.showWhen.key) as FieldValue)
++  );
++
++  return (
++    <div className="space-y-3">
++      <div className="space-y-1">
++        <Label className="text-[10px] text-muted-foreground uppercase">Block</Label>
++        <Select value={config.blockType || undefined} onValueChange={(v) => write(v, {})}>
++          <SelectTrigger className="h-8 text-sm">
++            <SelectValue placeholder="Choose a block" />
++          </SelectTrigger>
++          <SelectContent>
++            {schema.blockTypes.map((t) => (
++              <SelectItem key={t.value} value={t.value}>
++                {t.label}
++              </SelectItem>
++            ))}
++          </SelectContent>
++        </Select>
++        {current?.description && <p className="text-[11px] text-muted-foreground">{current.description}</p>}
++      </div>
++
++      {visibleFields.map((field) => (
++        <SchemaField key={field.key} field={field} value={valueOf(field.key)} onChange={(v) => setField(field.key, v)} />
++      ))}
++
++      {current && Object.keys(config.settings).length > 0 && (
++        <button
++          type="button"
++          className="text-[11px] font-medium text-primary hover:underline"
++          onClick={() => write(config.blockType, {})}
++        >
++          Reset this block to its default settings
++        </button>
++      )}
++
++      <details className="rounded border border-dashed p-2">
++        <summary className="cursor-pointer text-[10px] uppercase text-muted-foreground">Advanced (JSON)</summary>
++        <div className="pt-2">{fallback}</div>
++      </details>
++    </div>
++  );
++}
++
++function SchemaField({ field, value, onChange }: { field: PluginSettingsField; value: unknown; onChange: (v: unknown) => void }) {
++  const label = <Label className="text-[10px] text-muted-foreground uppercase">{field.label}</Label>;
++  const help = field.description ? <p className="text-[11px] text-muted-foreground">{field.description}</p> : null;
++
++  if (field.type === 'boolean') {
++    return (
++      <div className="flex items-center justify-between gap-3">
++        <div className="min-w-0">
++          {label}
++          {help}
++        </div>
++        <Switch checked={value === true} onCheckedChange={(checked) => onChange(checked)} />
++      </div>
++    );
++  }
++
++  if (field.type === 'select') {
++    const options = field.options || [];
++    const selected = options.find((o) => String(o.value) === String(value ?? ''));
++    return (
++      <div className="space-y-1">
++        {label}
++        <Select
++          value={selected ? String(selected.value) : undefined}
++          onValueChange={(v) => onChange(options.find((o) => String(o.value) === v)?.value ?? v)}
++        >
++          <SelectTrigger className="h-8 text-sm">
++            <SelectValue placeholder={field.placeholder || 'Choose…'} />
++          </SelectTrigger>
++          <SelectContent>
++            {options.map((o) => (
++              <SelectItem key={String(o.value)} value={String(o.value)}>
++                {o.label}
++              </SelectItem>
++            ))}
++          </SelectContent>
++        </Select>
++        {help}
++      </div>
++    );
++  }
++
++  if (field.type === 'number') {
++    return (
++      <div className="space-y-1">
++        {label}
++        <Input
++          type="number"
++          className="h-8 text-sm"
++          min={field.min}
++          max={field.max}
++          step={field.step ?? 1}
++          value={typeof value === 'number' ? value : value === undefined || value === null ? '' : String(value)}
++          onChange={(e) => {
++            if (e.target.value === '') return onChange(undefined);
++            const n = Number(e.target.value);
++            if (!Number.isFinite(n)) return;
++            const clamped = Math.min(field.max ?? n, Math.max(field.min ?? n, n));
++            onChange(clamped);
++          }}
++        />
++        {help}
++      </div>
++    );
++  }
++
++  if (field.type === 'color') {
++    const hex = typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : '#000000';
++    return (
++      <div className="space-y-1">
++        {label}
++        <div className="flex items-center gap-2">
++          <input type="color" value={hex} onChange={(e) => onChange(e.target.value)} className="h-8 w-10 cursor-pointer rounded border" />
++          <Input className="h-8 text-xs font-mono" value={typeof value === 'string' ? value : ''} onChange={(e) => onChange(e.target.value || undefined)} />
++        </div>
++        {help}
++      </div>
++    );
++  }
++
++  return (
++    <div className="space-y-1">
++      {label}
++      {field.type === 'text' ? (
++        <textarea
++          className="min-h-[64px] w-full rounded-md border bg-background px-2 py-1 text-sm"
++          placeholder={field.placeholder}
++          value={typeof value === 'string' ? value : ''}
++          onChange={(e) => onChange(e.target.value)}
++        />
++      ) : (
++        <Input
++          className="h-8 text-sm"
++          placeholder={field.placeholder}
++          value={typeof value === 'string' || typeof value === 'number' ? String(value) : ''}
++          onChange={(e) => onChange(e.target.value)}
++        />
++      )}
++      {help}
++    </div>
++  );
++}

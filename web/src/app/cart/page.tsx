@@ -22,6 +22,7 @@ import { listProducts } from '@/lib/products/api';
 import type { Product } from '@/lib/products/types';
 import { orderUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const API_BASE = '/api/plugins/ecommerce-plugin';
 const STORAGE_KEY = CART_STORAGE_KEY;
@@ -210,7 +211,7 @@ function CartPage() {
       });
       setCart({ lines: [], coupon: '' });
       toast.flash('Order placed', `#${res.orderNumber}`);
-      window.location.href = orderUrls.detail(String(res.orderId));
+      navigate(orderUrls.detail(String(res.orderId)));
     } catch (err) {
       setPlaceError(err instanceof Error ? err.message : 'Could not place the order.');
       setPlacing(false);

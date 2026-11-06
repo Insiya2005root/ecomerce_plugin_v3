@@ -4,6 +4,7 @@ import * as React from "react";
 import { AffixInput, Field, TextInput } from "@/components/admin/fields";
 import { CURRENCY_SYMBOL } from "@/lib/format";
 import type { FormErrors, RuleSettings, SavedStatus } from "@/lib/discounts/form";
+import { addLeaveGuard } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
 type Props<T extends RuleSettings> = { values: T; onChange: (patch: Partial<T>) => void; errors: FormErrors };
@@ -89,7 +90,7 @@ export function StackingFields<T extends RuleSettings>({ values, onChange, error
 /** Sticky save bar used by the promotion forms. */
 export function FormFooter({ saving, submitLabel, cancelHref, dirty }: { saving: boolean; submitLabel: string; cancelHref: string; dirty: boolean }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+    <div className="sticky bottom-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
       <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6 lg:px-8">
         {dirty && <span className="mr-auto text-xs text-muted-foreground">Unsaved changes</span>}
         <a href={cancelHref} className="inline-flex h-7 items-center rounded-md border px-3 text-sm font-medium hover:bg-muted">
@@ -107,11 +108,7 @@ export function useDirtyGuard(dirty: boolean) {
   const allow = React.useRef(false);
   React.useEffect(() => {
     if (!dirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!allow.current) e.preventDefault();
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
+    return addLeaveGuard(() => !allow.current);
   }, [dirty]);
   return React.useCallback(() => {
     allow.current = true;

@@ -7,7 +7,7 @@
     "kind": "system",
     "type": "ecommerce",
     "icon": "shopping-bag",
-    "adminEntry": "ui/admin/index.html",
+    "adminMount": "ui/admin/mount.js",
     "blockEntry": "ui/block/index.js",
     "styles": [
         "ui/block/styles.css"
@@ -25,141 +25,135 @@
         {
             "id": "ecommerce-dashboard",
             "label": "Dashboard",
-            "entry": "ui/admin/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "layout-dashboard"
         },
         {
             "id": "ecommerce-products",
             "label": "Products",
-            "entry": "ui/admin/products/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "package"
         },
         {
             "id": "ecommerce-collections",
             "label": "Collections",
-            "entry": "ui/admin/collections/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "folder",
             "parent": "ecommerce-products"
         },
         {
             "id": "ecommerce-categories",
             "label": "Categories",
-            "entry": "ui/admin/categories/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "folder",
             "parent": "ecommerce-products"
         },
         {
             "id": "ecommerce-inventory",
             "label": "Inventory",
-            "entry": "ui/admin/inventory/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "list"
         },
         {
             "id": "ecommerce-inventory-reservations",
             "label": "Reservations",
-            "entry": "ui/admin/inventory/reservations/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "list",
             "parent": "ecommerce-inventory"
         },
         {
             "id": "ecommerce-orders",
             "label": "Orders",
-            "entry": "ui/admin/orders/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "shopping-cart"
         },
         {
             "id": "ecommerce-cart",
             "label": "Cart",
-            "entry": "ui/admin/cart/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "shopping-cart",
             "parent": "ecommerce-orders"
         },
         {
             "id": "ecommerce-customers",
             "label": "Customers",
-            "entry": "ui/admin/customers/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "users"
         },
         {
             "id": "ecommerce-discounts",
             "label": "Promotions",
-            "entry": "ui/admin/discounts/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "tag"
         },
         {
             "id": "ecommerce-discounts-automatic",
             "label": "Automatic discounts",
-            "entry": "ui/admin/discounts/all/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "tag",
             "parent": "ecommerce-discounts"
         },
         {
             "id": "ecommerce-discounts-coupons",
             "label": "Coupons",
-            "entry": "ui/admin/discounts/coupons/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "tag",
             "parent": "ecommerce-discounts"
         },
         {
             "id": "ecommerce-discounts-campaigns",
             "label": "Campaigns",
-            "entry": "ui/admin/discounts/campaigns/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "tag",
             "parent": "ecommerce-discounts"
         },
         {
             "id": "ecommerce-discounts-custom",
             "label": "Custom rules",
-            "entry": "ui/admin/discounts/custom/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "tag",
             "parent": "ecommerce-discounts"
         },
         {
             "id": "ecommerce-settings",
             "label": "Settings",
-            "entry": "ui/admin/settings/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "settings"
         },
         {
             "id": "ecommerce-settings-general",
             "label": "General",
-            "entry": "ui/admin/settings/general/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "settings",
             "parent": "ecommerce-settings"
         },
         {
             "id": "ecommerce-settings-profile",
             "label": "Profile",
-            "entry": "ui/admin/settings/profile/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "user",
             "parent": "ecommerce-settings"
         },
         {
             "id": "ecommerce-settings-tax",
             "label": "Tax",
-            "entry": "ui/admin/settings/tax/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "settings",
             "parent": "ecommerce-settings"
         },
         {
             "id": "ecommerce-settings-shipping",
             "label": "Shipping",
-            "entry": "ui/admin/settings/shipping/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "settings",
             "parent": "ecommerce-settings"
         },
         {
             "id": "ecommerce-settings-locations",
             "label": "Locations",
-            "entry": "ui/admin/settings/locations/index.html",
+            "entry": "ui/admin/mount.js",
             "icon": "settings",
             "parent": "ecommerce-settings"
-        },
-        {
-            "id": "ecommerce-storefront",
-            "label": "Storefront",
-            "entry": "ui/admin/storefront/index.html",
-            "icon": "layout-template"
         }
     ],
     "maxSize": "50MB",

@@ -1,0 +1,1 @@
+import{a as r}from"./chunk-RXYLONX7.js";var o=["Returning","New","One-time","No purchases"];async function i(e,n){let s=new URLSearchParams;for(let[u,t]of Object.entries(e))t!==void 0&&t!==""&&s.set(u,String(t));return r(`/customers?${s}`,{signal:n})}async function a(e){return(await r(`/customers/lookup?email=${encodeURIComponent(e)}`)).customer}export{o as a,i as b,a as c};

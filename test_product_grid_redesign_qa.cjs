@@ -33,70 +33,34 @@ assert(
 );
 
 const gridBlockCode = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'blocks', 'ProductGridBlock.tsx'), 'utf8');
-assert(
-  gridBlockCode.includes('rawColsDesktop > 0 ? rawColsDesktop : 4'),
-  'ProductGridBlock component must default columnsDesktop to 4'
-);
+assert(gridBlockCode.includes('num(settings.columnsDesktop, 4, 2, 6)'), 'ProductGridBlock component must default columnsDesktop to 4');
 
-const stylesCss = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'styles.css'), 'utf8');
-assert(
-  stylesCss.includes('grid-template-columns: repeat(var(--grid-cols-desktop, 4), minmax(0, 1fr)) !important;'),
-  'CSS must define repeat(var(--grid-cols-desktop, 4), minmax(0, 1fr)) on desktop'
-);
-assert(
-  stylesCss.includes('max-width: 84rem;'),
-  'Container must have max-width: 84rem (1344px) to comfortably accommodate 4 columns on 1440px displays'
-);
+const cardCode = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'components', 'ProductCard.tsx'), 'utf8');
+const blockCss = fs.readFileSync(path.join(ROOT_DIR, 'plugin', 'ecommerce-plugin', 'ui', 'block', 'styles.css'), 'utf8');
+assert(blockCss.includes(".ecom-sf .\\@4xl\\:grid-cols-4"), 'CSS must define 4 desktop columns');
+assert(gridBlockCode.includes('StorefrontShell') && blockCss.includes(".ecom-sf .max-w-7xl"), 'Container must be max-w-7xl');
 console.log('✓ 4-Column desktop defaults verified across blueprint, registry, component, and CSS.');
 
 // 2. Responsive Grid Breakpoints
 console.log('\n--> 2. Verifying Responsive Breakpoints (Desktop: 4, Tablet: 2, Mobile: 1)...');
-assert(
-  stylesCss.includes('@media (min-width: 640px)'),
-  'styles.css must have min-width: 640px tablet media query'
-);
-assert(
-  stylesCss.includes('grid-template-columns: repeat(var(--grid-cols-tablet, 2), minmax(0, 1fr)) !important;'),
-  'Tablet breakpoint must use 2 columns'
-);
-assert(
-  stylesCss.includes('grid-template-columns: repeat(var(--grid-cols-mobile, 1), minmax(0, 1fr)) !important;'),
-  'Mobile breakpoint must use 1 column (configurable to 2)'
-);
+assert(blockCss.includes('min-width:40rem') || blockCss.includes('width>=40rem'), 'CSS must have the 640px (sm) breakpoint');
+assert(blockCss.includes(".ecom-sf .\\@xl\\:grid-cols-2"), 'Tablet breakpoint must use 2 columns');
+assert(blockCss.includes(".ecom-sf .grid-cols-1") && blockCss.includes(".ecom-sf .grid-cols-2"), 'Phone grid must offer 1 or 2 columns');
 console.log('✓ Responsive breakpoints verified.');
 
 // 3. Compact ProductCard Design & Contained Square Images
 console.log('\n--> 3. Verifying Compact ProductCard Design & Contained 1:1 Images...');
-assert(
-  stylesCss.includes('aspect-ratio: 1 / 1 !important;'),
-  'Product card media area must enforce 1:1 square aspect ratio'
-);
-assert(
-  stylesCss.includes('object-fit: contain !important;'),
-  'Product card images must use object-fit: contain to prevent distortion or uncropped overflow'
-);
-assert(
-  stylesCss.includes('-webkit-line-clamp: 2;'),
-  'Product card title must clamp to maximum 2 lines'
-);
-assert(
-  stylesCss.includes('.ecom-sf-product-card-footer'),
-  'styles.css must contain .ecom-sf-product-card-footer for uniform bottom alignment'
-);
-assert(
-  stylesCss.includes('margin-top: auto;'),
-  'Product card footer/price section must use margin-top: auto for aligned baseline'
-);
+assert(cardCode.includes("square: 'aspect-square'") && blockCss.includes(".ecom-sf .aspect-square"), 'Product card media must default to a square');
+assert(cardCode.includes('object-cover') && blockCss.includes(".ecom-sf .object-cover"), 'Product card images fill the square without distortion');
+assert(cardCode.includes('line-clamp-2') && blockCss.includes(".ecom-sf .line-clamp-2"), 'Product card title must clamp to maximum 2 lines');
+assert(cardCode.includes('ecom-sf-product-card-footer'), 'Card must have a footer for uniform bottom alignment');
+assert(cardCode.includes('mt-auto') && blockCss.includes(".ecom-sf .mt-auto"), 'Price section must use mt-auto for aligned baseline');
 
-const cardCode = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'components', 'ProductCard.tsx'), 'utf8');
 assert(
-  cardCode.includes('className="ecom-sf-product-card-footer"'),
+  cardCode.includes('ecom-sf-product-card-footer mt-auto'),
   'ProductCard component must wrap price and action sections in ecom-sf-product-card-footer'
 );
-assert(
-  cardCode.includes('ecom-sf-product-card-meta-left'),
-  'ProductCard component must group category and SKU in meta-left container'
-);
+assert(cardCode.includes('ecom-sf-product-card-category') && cardCode.includes('ecom-sf-product-card-sku'), 'ProductCard must show category and SKU');
 console.log('✓ Compact ProductCard design and contained image specifications verified.');
 
 // 4. Standalone Self-Injected CSS Bundle Verification
@@ -140,10 +104,7 @@ assert(
   'storefront.ts must provide secondary _id: 1 tiebreakers for deterministic stable sorting'
 );
 
-assert(
-  gridBlockCode.includes('price_asc\', \'price_desc\', \'name_asc\', \'name_desc'),
-  'ProductGridBlock must not send default newest sort for selected source'
-);
+assert(gridBlockCode.includes("if (sort && sort !== 'newest') query.sort = sort;"), 'ProductGridBlock must not send default newest sort for selected source');
 console.log('✓ Selected product order preservation and stable sorting tiebreakers verified.');
 
 // 6. Zero Mutating Database Writes on Public Reads

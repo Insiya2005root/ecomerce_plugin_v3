@@ -26,7 +26,7 @@ async function clickByText(page, selector, label) {
     { timeout: 10000 }, selector, label
   );
   await h.asElement().evaluate((el) => el.scrollIntoView({ block: 'center' }));
-  await h.asElement().click();
+  await h.asElement().click().catch((e) => { throw new Error(`${e.message} (clicking "${label}" in ${selector})`); });
 }
 async function clickContaining(page, selector, label) {
   const h = await page.waitForFunction(
@@ -34,7 +34,7 @@ async function clickContaining(page, selector, label) {
     { timeout: 10000 }, selector, label
   );
   await h.asElement().evaluate((el) => el.scrollIntoView({ block: 'center' }));
-  await h.asElement().click();
+  await h.asElement().click().catch((e) => { throw new Error(`${e.message} (clicking "${label}" in ${selector})`); });
 }
 async function fill(page, id, value) {
   await page.focus(`[id="${id}"]`);
@@ -55,6 +55,12 @@ const panelGone = (page) => page.waitForFunction(() => !document.querySelector('
 
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1366, height: 900 });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && problems.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`[pageerror] ${e.message}`));
@@ -186,12 +192,14 @@ const panelGone = (page) => page.waitForFunction(() => !document.querySelector('
     await page.goto(`${BASE}/products/add/index.html`, { waitUntil: 'networkidle0' });
     await clickByText(page, 'button', 'New category');
     await page.waitForSelector('[role="dialog"]');
+    // Wait for the drawer to finish sliding in, so its buttons are on screen.
+    await page.waitForFunction(() => document.querySelector('[role="dialog"]').getAnimations({ subtree: true }).every((x) => x.playState !== 'running'));
     const nameInput = await page.waitForFunction(() => [...document.querySelectorAll('[role="dialog"] input')].find((i) => i.offsetParent !== null));
     await nameInput.asElement().type('Kurtas');
     await clickContaining(page, '[role="dialog"] button[type="submit"]', 'Create');
     await panelGone(page);
     await page.waitForFunction(() => document.querySelector('#categoryId')?.textContent.includes('Kurtas'), { timeout: 10000 });
-    assert.ok(page.url().includes('/products/add/'), 'stayed on the product form');
+    assert.ok(page.url().includes('ecommerce-products?view=add'), 'stayed on the product form');
     ok('"New category" creates a category from the product form and selects it');
 
     await page.goto(`${BASE}/customers/detail/index.html?email=neha%40example.com`, { waitUntil: 'networkidle0' });

@@ -11,6 +11,9 @@ import {
   StorefrontLoadingState,
   StorefrontShell,
 } from '../components/StorefrontState';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 export type StorefrontFoundationBlockProps =
   | StorefrontBlockContext
@@ -77,89 +80,51 @@ export function StorefrontFoundationBlock(props: StorefrontFoundationBlockProps)
   }
 
   const { publishedProducts, activeCategories } = health.catalog;
-  const blockTitle = block?.label || 'Ecommerce Storefront Foundation';
-  const isRequiredBlock = Boolean(block?.required);
-  const isBlockEnabled = block?.enabled !== false;
+  const blockTitle = block?.label || 'Ecommerce storefront';
 
-  // Editor mode: display helpful setup, block role, and catalog verification details for the merchant
-  if (isEditing) {
+  // Public mode with an empty catalog: a calm "coming soon" instead of an empty block.
+  if (!isEditing && publishedProducts === 0) {
     return (
       <StorefrontShell>
-        <div className="ecom-sf-card" data-editing="true">
-          <div className="ecom-sf-header">
-            <div>
-              <span className="ecom-sf-badge ecom-sf-badge-ready">
-                {block?.blockType
-                  ? isRequiredBlock
-                    ? 'Required System Block'
-                    : isBlockEnabled
-                      ? 'Optional Block (Active)'
-                      : 'Optional Block (Hidden)'
-                  : 'Storefront Connected'}
-              </span>
-              <h3 className="ecom-sf-title">{blockTitle}</h3>
-              <p className="ecom-sf-subtitle">
-                Editor preview: connected to live catalog data and blueprint configuration.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => fetchFoundationStatus()}
-              className="ecom-sf-btn"
-            >
-              Refresh Status
-            </button>
-          </div>
-
-          <div className="ecom-sf-metrics">
-            <div className="ecom-sf-metric-box">
-              <span className="ecom-sf-metric-label">Published Products</span>
-              <strong className="ecom-sf-metric-value">{publishedProducts}</strong>
-            </div>
-            <div className="ecom-sf-metric-box">
-              <span className="ecom-sf-metric-label">Active Categories</span>
-              <strong className="ecom-sf-metric-value">{activeCategories}</strong>
-            </div>
-            <div className="ecom-sf-metric-box">
-              <span className="ecom-sf-metric-label">Shipping Mode</span>
-              <strong className="ecom-sf-metric-value">
-                {health.configuration.shippingMethod}
-              </strong>
-            </div>
-          </div>
-        </div>
+        <StorefrontEmptyState title="Catalog coming soon" description="Our store is preparing new items." />
       </StorefrontShell>
     );
   }
 
-  // Public customer mode: clean, minimal, customer-safe output with zero technical internals
-  if (publishedProducts === 0) {
-    return (
-      <StorefrontShell>
-        <StorefrontEmptyState
-          title="Catalog Coming Soon"
-          description="Our store is currently preparing new items."
-        />
-      </StorefrontShell>
-    );
-  }
+  const metrics = [
+    ['Published products', publishedProducts],
+    ['Active categories', activeCategories],
+    ...(isEditing ? [['Shipping', health.configuration.shippingMethod] as const] : []),
+  ] as const;
 
   return (
     <StorefrontShell>
-      <div className="ecom-sf-card" data-editing="false">
-        <div className="ecom-sf-header">
-          <div>
-            <span className="ecom-sf-badge ecom-sf-badge-ready">Store Online</span>
-            <h2 className="ecom-sf-title">
-              {block?.blockType ? blockTitle : 'Welcome to Our Store'}
-            </h2>
-            <p className="ecom-sf-subtitle">
-              Browse {publishedProducts} {publishedProducts === 1 ? 'product' : 'products'} across{' '}
-              {activeCategories} {activeCategories === 1 ? 'category' : 'categories'}.
-            </p>
+      <Card data-editing={isEditing}>
+        <CardHeader className="flex-row items-start justify-between gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Badge variant="secondary" className="w-fit">{isEditing ? 'Storefront connected' : 'Store online'}</Badge>
+            <CardTitle className="text-xl">{isEditing ? blockTitle : 'Welcome to our store'}</CardTitle>
+            <CardDescription>
+              {isEditing
+                ? 'Editor preview: connected to your live catalog. Pick what this block shows under Plugin Settings.'
+                : `Browse ${publishedProducts} ${publishedProducts === 1 ? 'product' : 'products'} across ${activeCategories} ${activeCategories === 1 ? 'category' : 'categories'}.`}
+            </CardDescription>
           </div>
-        </div>
-      </div>
+          {isEditing && (
+            <Button variant="outline" className="cursor-pointer" onClick={() => fetchFoundationStatus()}>
+              Refresh
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          {metrics.map(([label, value]) => (
+            <div key={label} className="rounded-2xl bg-muted/50 p-4">
+              <span className="text-xs text-muted-foreground">{label}</span>
+              <strong className="block text-2xl font-semibold">{value}</strong>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </StorefrontShell>
   );
 }

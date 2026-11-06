@@ -13,6 +13,7 @@ import { LocationPanel } from '@/components/settings/LocationPanel';
 import { ActiveBadge, useLoader } from '@/components/settings/SettingsBits';
 import { settingsUrls } from '@/lib/products/urls';
 import { hasCoordinates, listLocations } from '@/lib/settings';
+import { navigate } from '@/lib/router';
 
 function Locations() {
   const { data: locations, error, reload } = useLoader(listLocations);
@@ -71,7 +72,7 @@ function Locations() {
                   className="cursor-pointer"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a,button')) return;
-                    window.location.href = settingsUrls.location(l._id);
+                    navigate(settingsUrls.location(l._id));
                   }}
                 >
                   <TableCell className="py-2.5 pl-5">
@@ -112,7 +113,7 @@ function Locations() {
         onSaved={(saved) => {
           setAdding(false);
           toast.flash('Location added', saved.name);
-          window.location.href = settingsUrls.location(saved._id);
+          navigate(settingsUrls.location(saved._id));
         }}
       />
     </div>

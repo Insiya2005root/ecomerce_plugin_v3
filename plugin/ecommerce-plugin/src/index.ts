@@ -12,6 +12,7 @@ function isPublicPluginRoute(method: string, rawPath: string): boolean {
       normalizedPath === 'storefront/settings' ||
       normalizedPath === 'storefront/categories' ||
       normalizedPath === 'storefront/products' ||
+      normalizedPath === 'storefront/pincode' ||
       /^storefront\/products\/[^/]+$/.test(normalizedPath) ||
       /^storefront\/pages\/(shop|product|cart|checkout)$/.test(normalizedPath)
     ) {
@@ -20,7 +21,7 @@ function isPublicPluginRoute(method: string, rawPath: string): boolean {
   }
 
   if (upperMethod === 'POST') {
-    if (normalizedPath === 'cart/calculate') {
+    if (normalizedPath === 'cart/calculate' || normalizedPath === 'storefront/checkout' || normalizedPath === 'storefront/order-lookup') {
       return true;
     }
   }
@@ -32,11 +33,28 @@ export = {
   async register({ app, cms }: any) {
     // Replace default '/health'-only auth middleware with explicit method+path public allowlist
     // while keeping all Admin CRUD and configuration routes strictly protected.
+    // Storefront pages are created with no owner; the first signed-in admin becomes their owner so they
+    // appear in OpenExt's Pages list (checked at most once a minute, never delays the request).
+    let lastOwnerCheck = 0;
+    const adoptStorefrontPages = (userId: unknown) => {
+      if (typeof userId !== 'string' || Date.now() - lastOwnerCheck < 60_000) return;
+      lastOwnerCheck = Date.now();
+      const { StorefrontBlueprintService } = require('./services/StorefrontBlueprintService');
+      StorefrontBlueprintService.adoptOwnerlessPages('default_tenant', userId).catch((err: unknown) =>
+        cms.logger?.warn?.('Could not set the owner of the storefront pages.', err)
+      );
+      // Once per site: a default Header/Footer in OpenExt Pages when the site has none.
+      require('./services/SiteChromeService').SiteChromeService.ensureDefaultHeaderFooter('default_tenant', userId).catch((err: unknown) =>
+        cms.logger?.warn?.('Could not add the default site header/footer.', err)
+      );
+    };
+
     const strictAuthMiddleware = async (req: any, res: any, next: () => Promise<void>) => {
       if (!isPublicPluginRoute(req?.method, req?.path) && !req?.user) {
         res.status(401).json({ message: 'Unauthorized' });
         return;
       }
+      if (req?.user?.userId) adoptStorefrontPages(req.user.userId);
       await next();
     };
 
@@ -73,6 +91,7 @@ export = {
     require('./routes/inventory')(app);
     require('./routes/discounts')(app);
     require('./routes/storefront')(app);
+    require('./routes/storefrontCheckout')(app);
 
     // Products created before inventory existed get their inventory items (stock moves to the primary location).
     try {

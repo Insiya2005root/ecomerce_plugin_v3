@@ -503,6 +503,9 @@ class DiscountEngine {
                     amount: ruleTotalAmount,
                     discountAmount: ruleTotalAmount
                 };
+                // Lets the storefront show which entered coupon code took effect.
+                if (rule.code)
+                    md.code = String(rule.code);
                 if (rewardProductId)
                     md.rewardProductId = rewardProductId;
                 if (rewardProductName)

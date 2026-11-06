@@ -1,0 +1,1 @@
+import{a as t,j as r}from"./chunk-23JLLLQK.js";import{c as o,e as c}from"./chunk-S6MA4CYQ.js";var e=o(c());var s=()=>()=>{};function i(){return e.useSyncExternalStore(s,r,()=>t.list())}export{i as a};

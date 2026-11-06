@@ -11,24 +11,7 @@ const __dirname = path.dirname(__filename);
 const webRoot = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(webRoot, '..');
 const pluginDir = path.join(repoRoot, 'plugin', 'ecommerce-plugin');
-const outDir = path.join(webRoot, 'out');
 const adminUiDir = path.join(pluginDir, 'ui', 'admin');
-
-async function copyDirFiltered(src, dest) {
-  await fs.mkdir(dest, { recursive: true });
-  const entries = await fs.readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      await copyDirFiltered(srcPath, destPath);
-    } else if (entry.isFile()) {
-      // Skip Next.js RSC .txt payload files to keep file count well under OpenExt 1000-file limit
-      if (entry.name.endsWith('.txt')) continue;
-      await fs.copyFile(srcPath, destPath);
-    }
-  }
-}
 
 async function collectFiles(dir, baseDir = dir) {
   const results = [];
@@ -59,9 +42,10 @@ async function collectFiles(dir, baseDir = dir) {
 }
 
 async function packagePlugin() {
-  // 1. Clean and sync ui/admin from web/out
-  await fs.rm(adminUiDir, { recursive: true, force: true });
-  await copyDirFiltered(outDir, adminUiDir);
+  // 1. ui/admin is produced by scripts/build-admin.mjs (OpenExt Mount API: mount.js + chunks + admin.css)
+  await fs.stat(path.join(adminUiDir, 'mount.js')).catch(() => {
+    throw new Error('ui/admin/mount.js is missing: run npm run build first');
+  });
 
   // 2. Remove any stray node_modules in pluginDir
   await fs.rm(path.join(pluginDir, 'node_modules'), { recursive: true, force: true });
@@ -69,43 +53,8 @@ async function packagePlugin() {
   // 3. Verify critical compiled files exist
   const requiredFiles = [
     'manifest.json',
-    'ui/admin/index.html',
-    'ui/admin/storefront/index.html',
-    'ui/admin/storefront/shop/index.html',
-    'ui/admin/storefront/product/index.html',
-    'ui/admin/storefront/cart/index.html',
-    'ui/admin/storefront/checkout/index.html',
-    'ui/admin/products/index.html',
-    'ui/admin/products/add/index.html',
-    'ui/admin/products/edit/index.html',
-    'ui/admin/products/detail/index.html',
-    'ui/admin/collections/index.html',
-    'ui/admin/collections/detail/index.html',
-    'ui/admin/categories/index.html',
-    'ui/admin/categories/detail/index.html',
-    'ui/admin/orders/index.html',
-    'ui/admin/orders/detail/index.html',
-    'ui/admin/cart/index.html',
-    'ui/admin/discounts/index.html',
-    'ui/admin/discounts/detail/index.html',
-    'ui/admin/discounts/all/index.html',
-    'ui/admin/discounts/coupons/index.html',
-    'ui/admin/discounts/campaigns/index.html',
-    'ui/admin/discounts/custom/index.html',
-    'ui/admin/customers/index.html',
-    'ui/admin/inventory/index.html',
-    'ui/admin/inventory/detail/index.html',
-    'ui/admin/inventory/stock/index.html',
-    'ui/admin/inventory/reservations/index.html',
-    'ui/admin/customers/detail/index.html',
-    'ui/admin/settings/index.html',
-    'ui/admin/settings/general/index.html',
-    'ui/admin/settings/profile/index.html',
-    'ui/admin/settings/tax/index.html',
-    'ui/admin/settings/tax/detail/index.html',
-    'ui/admin/settings/shipping/index.html',
-    'ui/admin/settings/locations/index.html',
-    'ui/admin/settings/locations/detail/index.html',
+    'ui/admin/mount.js',
+    'ui/admin/admin.css',
     'ui/block/index.js',
     'ui/block/styles.css',
     'api/index.js',
@@ -135,7 +84,19 @@ async function packagePlugin() {
     'api/services/GeoLookup.js',
   ];
 
-  for (const reqFile of requiredFiles) {
+  // Same checks OpenExt runs on upload: system plugins need adminMount, and every adminNav entry must be a
+  // mount module that exists in the package.
+  const manifest = JSON.parse(await fs.readFile(path.join(pluginDir, 'manifest.json'), 'utf8'));
+  if (!manifest.adminMount || !/\.m?js$/.test(manifest.adminMount)) throw new Error('manifest.adminMount must point at a .js mount module');
+  for (const item of manifest.adminNav ?? []) {
+    if (!/\.m?js$/.test(item.entry || '')) throw new Error(`adminNav "${item.label}" entry must be a mount module, got "${item.entry}"`);
+    requiredFiles.push(item.entry);
+  }
+  for (const s of manifest.styles ?? []) requiredFiles.push(s);
+  const mountSource = await fs.readFile(path.join(pluginDir, manifest.adminMount), 'utf8');
+  if (!/export\s*\{[^}]*\bmount\b/.test(mountSource)) throw new Error('adminMount module does not export mount()');
+
+  for (const reqFile of new Set(requiredFiles)) {
     const target = path.join(pluginDir, reqFile);
     const stat = await fs.stat(target);
     if (!stat.isFile() || stat.size === 0) {

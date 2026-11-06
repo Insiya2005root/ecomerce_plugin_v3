@@ -60,7 +60,7 @@ function ProfileSettings() {
   const [editing, setEditing] = React.useState(false);
   const [panelKey, setPanelKey] = React.useState(0);
   const [savingRange, setSavingRange] = React.useState(false);
-  const [dark, setDark] = useDarkMode();
+  const dark = useDarkMode();
   const crumbs = [{ label: 'Settings', href: settingsUrls.overview() }, { label: 'Profile' }];
 
   if (!data) {
@@ -162,17 +162,9 @@ function ProfileSettings() {
           <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
             <div className="min-w-0">
               <p className="text-[13px] font-medium">Appearance</p>
-              <p className="text-xs text-muted-foreground">Saved in this browser.</p>
+              <p className="text-xs text-muted-foreground">Follows OpenExt&apos;s light/dark switch, for the admin and the storefront.</p>
             </div>
-            <Segmented
-              label="Appearance"
-              value={dark ? 'dark' : 'light'}
-              options={[
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-              ]}
-              onChange={(v) => setDark(v === 'dark')}
-            />
+            <span className="text-[13px] text-muted-foreground">{dark ? 'Dark' : 'Light'}</span>
           </div>
         </div>
       </SectionCard>

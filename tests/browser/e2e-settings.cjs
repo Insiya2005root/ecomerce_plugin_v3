@@ -32,7 +32,7 @@ async function openMenu(page, ariaLabel, item) {
   await clickByText(page, '[role="menuitem"]', item);
 }
 async function fill(page, id, value) {
-  await page.click(`[id="${id}"]`, { clickCount: 3 });
+  await page.$eval(`[id="${id}"]`, (el) => { el.scrollIntoView({ block: 'center' }); el.focus(); el.select(); });
   await page.$eval(`[id="${id}"]`, (el) => el.select && el.select());
   await page.keyboard.press('Backspace');
   if (value) await page.type(`[id="${id}"]`, value);
@@ -60,6 +60,12 @@ async function noHorizontalScroll(page) {
 
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && problems.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => problems.push(`[pageerror] ${e.message}`));
@@ -87,7 +93,7 @@ async function noHorizontalScroll(page) {
     await page.waitForFunction(() => !document.body.innerText.includes('neha@example.com'), { timeout: 8000 });
     ok('Returning tile filters the list');
 
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), page.click('a[href*="customers/detail"]')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), page.click('a[href*="ecommerce-customers?view=detail"]')]);
     await waitText(page, 'Customer since');
     t = await text(page);
     assert.ok(t.includes('Total spent') && t.includes('Discounts used') && t.includes('TEN'), 'detail sections');
@@ -102,7 +108,7 @@ async function noHorizontalScroll(page) {
 
     await page.goto(`${BASE}/orders/detail/index.html?id=${orders[2].orderId}`, { waitUntil: 'networkidle0' });
     await waitText(page, 'View customer');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'a', 'View customer')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'a', 'View customer')]);
     await waitText(page, 'neha@example.com · Customer since');
     ok('order page links to its customer');
 
@@ -184,18 +190,22 @@ async function noHorizontalScroll(page) {
     ok('profile saves; dashboard opens on the saved 7-day range');
     await page.goto(`${BASE}/settings/profile/index.html`, { waitUntil: 'networkidle0' });
     await waitText(page, 'Appearance');
-    await clickByText(page, '[role="radio"]', 'Dark');
-    assert.ok(await page.evaluate(() => document.documentElement.classList.contains('dark')));
+    await waitText(page, "Follows OpenExt's light/dark switch");
+    // OpenExt's switch puts `dark` on <html>; the admin follows it.
+    await page.evaluate(() => document.documentElement.classList.add('dark'));
+    await page.waitForFunction(() => document.querySelector('.ecom-admin').classList.contains('dark'));
+    await page.waitForFunction(() => [...document.querySelectorAll('span')].some((s) => s.textContent.trim() === 'Dark'));
     await shot(page, 'settings-profile-dark');
-    await clickByText(page, '[role="radio"]', 'Light');
-    ok('appearance switches light/dark');
+    await page.evaluate(() => document.documentElement.classList.remove('dark'));
+    await page.waitForFunction(() => !document.querySelector('.ecom-admin').classList.contains('dark'));
+    ok("appearance follows OpenExt's light/dark switch");
 
     console.log('\n--> Tax');
     await page.goto(`${BASE}/settings/tax/index.html`, { waitUntil: 'networkidle0' });
     await waitText(page, 'Tax categories');
     await waitText(page, 'GST 12%');
     await shot(page, 'settings-tax');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'a', 'GST 12%')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'a', 'GST 12%')]);
     await waitText(page, 'No rates yet');
     await clickByText(page, 'button', 'Add rate');
     await page.waitForSelector('#tax-state');
@@ -272,7 +282,7 @@ async function noHorizontalScroll(page) {
     await clickByText(page, 'button', 'Enter coordinates by hand');
     await fill(page, 'loc-lat', '21.1702');
     await fill(page, 'loc-lng', '72.8311');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button[type="submit"]', 'Add location')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button[type="submit"]', 'Add location')]);
     await waitText(page, 'Open in OpenStreetMap');
     await waitText(page, 'Location added');
     ok('add location with validation, lands on its page');

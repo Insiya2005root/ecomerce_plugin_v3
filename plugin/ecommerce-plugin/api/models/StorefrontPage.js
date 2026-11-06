@@ -1,6 +1,7 @@
 "use strict";
 let StorefrontPageModel;
 let cmsInstance;
+let FlagModel;
 module.exports = {
     register: async (cms) => {
         cmsInstance = cms;
@@ -34,6 +35,8 @@ module.exports = {
             appliedBlueprintVersion: { type: Number, required: true, default: 1 },
             appliedBlueprintHash: { type: String, required: true },
             currentConfigHash: { type: String, required: true },
+            // Fingerprint of the OpenExt page content the plugin last wrote; differs once edited in the page builder
+            appliedCmsHash: { type: String, default: '' },
             isCustomized: { type: Boolean, default: false },
             revision: { type: Number, default: 1 },
             lastCustomizedAt: { type: Date, default: null },
@@ -43,9 +46,12 @@ module.exports = {
         schema.index({ tenantId: 1, pageType: 1 }, { unique: true });
         schema.index({ tenantId: 1, slug: 1 }, { unique: true });
         StorefrontPageModel = cms.models.register('EcommerceStorefrontPage', schema);
+        // One-off storefront set-up steps already done (e.g. the default site header/footer), so they never repeat.
+        FlagModel = cms.models.register('EcommerceStorefrontFlag', new mongoose.Schema({ tenantId: { type: String, required: true }, key: { type: String, required: true } }, { timestamps: true }).index({ tenantId: 1, key: 1 }, { unique: true }));
         return StorefrontPageModel;
     },
     getModel: () => StorefrontPageModel,
+    getFlagModel: () => FlagModel,
     getCmsPageModel: async () => {
         if (!cmsInstance || typeof cmsInstance.database?.page !== 'function') {
             return null;

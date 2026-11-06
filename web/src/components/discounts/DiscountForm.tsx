@@ -19,6 +19,7 @@ import { describeRule, promotionUrls, scheduleLabel } from "@/lib/discounts/desc
 import { discountToPayload, validateDiscount, type DiscountFormValues, type FormErrors, type OfferType } from "@/lib/discounts/form";
 import type { DiscountRule, TargetType } from "@/lib/discounts/types";
 import { cn } from "@/lib/utils";
+import { navigate } from "@/lib/router";
 
 const TYPE_CARDS: { type: OfferType; title: string; text: string; icon: IconSvgElement; accent: string }[] = [
   { type: "percentage", title: "Percentage off", text: "e.g. 10% off the order or selected products", icon: PercentIcon, accent: "text-sky-600 bg-sky-50 dark:bg-sky-500/10 dark:text-sky-400" },
@@ -111,7 +112,7 @@ export function DiscountForm({ mode, rule, initial, coupon }: { mode: "create" |
       const saved = mode === "create" ? await createDiscount(payload) : await updateDiscount(rule!._id, payload);
       allowLeave();
       toast.flash(mode === "create" ? "Discount created" : "Discount saved", saved.name);
-      window.location.href = promotionUrls.detail(saved._id);
+      navigate(promotionUrls.detail(saved._id));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not save.";
       if (err instanceof ApiError && err.status === 409) setErrors({ code: message });
@@ -123,7 +124,7 @@ export function DiscountForm({ mode, rule, initial, coupon }: { mode: "create" |
   const showTargets = values.type !== "buy_x_get_y";
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4 pb-20">
+    <form onSubmit={submit} noValidate className="space-y-4">
       {submitError && <InlineError message={submitError} />}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">

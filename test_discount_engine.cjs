@@ -1,6 +1,6 @@
 // test_discount_engine.cjs
 // 1) Golden test: the current DiscountEngine must give exactly the same results as the original engine
-//    (from git HEAD) for every existing rule type when the new options (priority/exclusive/cap) are unused.
+//    (from the repo's first commit) for every existing rule type when the new options (priority/exclusive/cap) are unused.
 // 2) Behaviour tests for priority, exclusive stacking, max discount cap and custom rules.
 // Usage: node test_discount_engine.cjs   (needs git, plus the requirements in test_support/plugin-api-harness.cjs)
 const assert = require('assert');
@@ -15,7 +15,8 @@ const { check, stats } = createChecker();
 
 function loadLegacyEngine() {
   // Original compiled engine from the first commit, with its model require pointed at this checkout.
-  const src = execSync('git show HEAD:plugin/ecommerce-plugin/api/services/DiscountEngine.js', { cwd: __dirname, encoding: 'utf8' });
+  const firstCommit = execSync('git rev-list --max-parents=0 HEAD', { cwd: __dirname, encoding: 'utf8' }).trim().split(/\s+/)[0];
+  const src = execSync(`git show ${firstCommit}:plugin/ecommerce-plugin/api/services/DiscountEngine.js`, { cwd: __dirname, encoding: 'utf8' });
   const productModel = path.join(pluginDir, 'api', 'models', 'Product.js').replace(/\\/g, '/');
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-engine-')), 'DiscountEngine.js');
   fs.writeFileSync(file, src.split("require('../models/Product')").join(`require('${productModel}')`));

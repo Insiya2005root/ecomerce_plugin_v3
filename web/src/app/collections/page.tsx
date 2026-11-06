@@ -20,6 +20,7 @@ import { deleteCollection, listCollections } from '@/lib/products/api';
 import type { Collection } from '@/lib/products/types';
 import { collectionUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 type State = { collections: Collection[]; loading: boolean; error: string | null };
 
@@ -142,7 +143,7 @@ function CollectionsList() {
                   className="cursor-pointer"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a,button,[role="menu"]')) return;
-                    window.location.href = collectionUrls.detail(c._id);
+                    navigate(collectionUrls.detail(c._id));
                   }}
                 >
                   <TableCell className="py-2.5 pl-4">
@@ -180,7 +181,7 @@ function CollectionsList() {
             toast.success('Collection saved', saved.title);
           } else {
             toast.flash('Collection created', 'Now add products to it.');
-            window.location.href = collectionUrls.detail(saved._id);
+            navigate(collectionUrls.detail(saved._id));
           }
         }}
       />

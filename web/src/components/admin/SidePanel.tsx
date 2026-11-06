@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Cancel01Icon } from "@hugeicons/core-free-icons";
 import { Button } from "@/components/ui/button";
+import { portalContainer } from "@/lib/host";
 
 /** Right-hand edit drawer (Medusa "RouteDrawer" pattern) built on the existing Base UI dialog primitive. */
 export function SidePanel({
@@ -28,7 +29,7 @@ export function SidePanel({
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
-      <DialogPrimitive.Portal>
+      <DialogPrimitive.Portal container={portalContainer()}>
         <DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/25 transition-opacity duration-200 data-ending-style:opacity-0 data-starting-style:opacity-0" />
         <DialogPrimitive.Popup className={`fixed inset-y-2 right-2 z-50 flex w-[calc(100%-1rem)] ${wide ? "max-w-3xl" : "max-w-lg"} flex-col overflow-hidden rounded-lg border bg-background text-foreground shadow-xl outline-none transition-transform duration-200 ease-out data-ending-style:translate-x-[calc(100%+1rem)] data-starting-style:translate-x-[calc(100%+1rem)]`}>
           <form

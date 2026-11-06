@@ -1,0 +1,1 @@
+"use client";import{h as o}from"./chunk-23JLLLQK.js";import{c as e,e as a,n as t,p as r}from"./chunk-S6MA4CYQ.js";var i=e(a());var p=e(r());function f(){return(0,i.useEffect)(()=>{t(o.list(),{replace:!0})},[]),(0,p.jsx)("p",{className:"text-[13px] text-muted-foreground",children:"Opening categories\u2026"})}export{f as default};

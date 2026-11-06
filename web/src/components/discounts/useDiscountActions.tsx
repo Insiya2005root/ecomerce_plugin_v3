@@ -8,6 +8,7 @@ import { toast } from "@/components/admin/toast";
 import { deleteDiscount, duplicateDiscount, updateDiscount } from "@/lib/discounts/api";
 import { promotionUrls } from "@/lib/discounts/describe";
 import type { DiscountRule } from "@/lib/discounts/types";
+import { navigate } from "@/lib/router";
 
 const msg = (err: unknown) => (err instanceof Error ? err.message : "Please try again.");
 
@@ -46,7 +47,7 @@ export function useDiscountActions({
     try {
       const copy = await duplicateDiscount(rule);
       toast.flash("Duplicated as a draft", copy.code ? `New code: ${copy.code}` : copy.name);
-      window.location.href = promotionUrls.detail(copy._id);
+      navigate(promotionUrls.detail(copy._id));
     } catch (err) {
       toast.error("Could not duplicate", msg(err));
       setBusyId(null);
@@ -77,8 +78,8 @@ export function useDiscountActions({
       const busy = busyId === rule._id;
       return [
         [
-          ...(includeView ? [{ label: "View details", icon: ViewIcon, onSelect: () => (window.location.href = promotionUrls.detail(rule._id)) }] : []),
-          { label: "Edit", icon: Edit02Icon, onSelect: () => (window.location.href = promotionUrls.edit(rule)) },
+          ...(includeView ? [{ label: "View details", icon: ViewIcon, onSelect: () => navigate(promotionUrls.detail(rule._id)) }] : []),
+          { label: "Edit", icon: Edit02Icon, onSelect: () => navigate(promotionUrls.edit(rule)) },
           { label: "Duplicate", icon: Copy01Icon, disabled: busy, onSelect: () => duplicate(rule) },
         ],
         [

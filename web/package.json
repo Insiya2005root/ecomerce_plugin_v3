@@ -3,11 +3,10 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "next dev",
-        "build": "next build",
+        "dev": "node scripts/build-admin.mjs",
+        "build": "node scripts/build-admin.mjs",
         "build:block": "node scripts/build-block.mjs",
         "package:plugin": "node scripts/package-plugin.mjs",
-        "start": "next start",
         "lint": "eslint"
     },
     "dependencies": {

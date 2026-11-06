@@ -17,6 +17,7 @@ import { listOrders } from '@/lib/orders/api';
 import { FULFILLMENT_STATUSES, PAYMENT_STATUSES, type Order } from '@/lib/orders/types';
 import { cartUrl, orderUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 const PAYMENT_OPTIONS: SelectOption[] = [{ value: 'all', label: 'All payments' }, ...PAYMENT_STATUSES.map((s) => ({ value: s, label: s }))];
@@ -205,7 +206,7 @@ function OrdersList() {
                         className="cursor-pointer"
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('a,button')) return;
-                          window.location.href = orderUrls.detail(o._id);
+                          navigate(orderUrls.detail(o._id));
                         }}
                       >
                         <TableCell className="py-2.5 pl-4">

@@ -12,14 +12,14 @@ console.log('====================================================\n');
 
 // 1. Verify files exist
 const productCardTsx = path.resolve(__dirname, 'web/src/storefront/components/ProductCard.tsx');
-const storefrontStylesCss = path.resolve(__dirname, 'web/src/storefront/styles.css');
+const storefrontStylesCss = path.resolve(__dirname, 'web/src/storefront/storefront.css');
 const storefrontPageTsx = path.resolve(__dirname, 'web/src/app/storefront/page.tsx');
 const blockIndexJs = path.resolve(__dirname, 'plugin/ecommerce-plugin/ui/block/index.js');
 const blockStylesCss = path.resolve(__dirname, 'plugin/ecommerce-plugin/ui/block/styles.css');
 
 assert(fs.existsSync(productCardTsx), 'ProductCard.tsx must exist');
-assert(fs.existsSync(storefrontStylesCss), 'styles.css must exist');
-assert(fs.existsSync(storefrontPageTsx), 'storefront/page.tsx must exist');
+assert(fs.existsSync(path.resolve(__dirname, 'web/src/storefront/storefront.css')), 'storefront.css (Tailwind entry) must exist');
+// The Storefront admin preview page was removed (storefront pages now live in OpenExt Pages); its checks skip.
 assert(fs.existsSync(blockIndexJs), 'ui/block/index.js must exist');
 assert(fs.existsSync(blockStylesCss), 'ui/block/styles.css must exist');
 console.log('✓ File existence verified');
@@ -44,17 +44,18 @@ console.log('✓ ProductCard API contracts and design rules verified');
 
 // 3. Verify CSS styling rules for ProductCard
 const cssSource = fs.readFileSync(storefrontStylesCss, 'utf8');
-assert(cssSource.includes('.ecom-sf-product-card'), 'styles.css must contain .ecom-sf-product-card');
-assert(cssSource.includes('aspect-ratio: 1 / 1'), 'Card media must maintain stable 1:1 aspect ratio');
-assert(cssSource.includes('.ecom-sf-product-card-img-fallback'), 'styles.css must style image fallback');
-assert(cssSource.includes('.ecom-sf-product-card-badge-discount'), 'styles.css must style discount badge');
-assert(cssSource.includes('.ecom-sf-product-card-price-compare'), 'styles.css must style compare-at strike-through price');
-assert(cssSource.includes('.ecom-sf-product-card-stock-out'), 'styles.css must style out-of-stock badge');
-assert(cssSource.includes('.ecom-sf-product-card-btn:disabled'), 'styles.css must style disabled Add to Cart state');
-assert(cssSource.includes('min-height: 44px') || cssSource.includes('min-height: 40px') || cssSource.includes('height: 44px') || cssSource.includes('min-height: 2.75rem'), 'styles.css must have touch-accessible button height');
+assert(cssSource.includes('@import "tailwindcss"') && cssSource.includes('shadcn/tailwind.css'), 'storefront.css must build on Tailwind and shadcn');
+assert(cardSource.includes('aspect-square'), 'Card media must maintain stable 1:1 aspect ratio');
+assert(cardSource.includes('ImageOff'), 'Card must show an icon when the image is missing');
+assert(cardSource.includes('<Badge') && cardSource.includes('discountPercentage'), 'Card must show a discount Badge');
+assert(cardSource.includes('line-through'), 'Compare-at price must be struck through');
+assert(cardSource.includes('text-destructive'), 'Out-of-stock state must be styled');
+assert(cardSource.includes('disabled={isOutOfStock}'), 'Add to cart must be disabled when out of stock');
+assert(cardSource.includes('<Button'), 'Card uses the shadcn Button (touch-sized)');
 console.log('✓ ProductCard CSS styling rules verified');
 
 // 4. Verify Storefront Admin Page integration
+if (fs.existsSync(storefrontPageTsx)) {
 const pageSource = fs.readFileSync(storefrontPageTsx, 'utf8');
 assert(pageSource.includes("import { ProductCard } from '@/storefront/components/ProductCard'"), 'storefront/page.tsx must import ProductCard');
 assert(pageSource.includes('storefrontApiClient.getProducts({ limit: 1'), 'storefront/page.tsx must fetch real published product');
@@ -62,10 +63,13 @@ assert(pageSource.includes('No Published Products Found'), 'storefront/page.tsx 
 assert(pageSource.includes('onAddToCart'), 'storefront/page.tsx must hook into onAddToCart callback');
 assert(pageSource.includes('cardShowCategory'), 'storefront/page.tsx must support toggle display flags');
 console.log('✓ Storefront Admin Overview real-product preview verified');
+} else {
+  console.log('- Storefront admin preview page removed; preview checks skipped');
+}
 
 // 5. Verify UI block bundle includes ProductCard styles
 const blockCssSource = fs.readFileSync(blockStylesCss, 'utf8');
-assert(blockCssSource.includes('.ecom-sf-product-card'), 'ui/block/styles.css must include ProductCard styles');
+assert(blockCssSource.includes('.ecom-sf .aspect-square') && blockCssSource.includes('.ecom-sf .line-clamp-2'), 'ui/block/styles.css must include the scoped Tailwind classes the card uses');
 console.log('✓ Block distribution styles.css verified');
 
 // 6. Test ProductCard behavioral rendering via Node using ts-node or compiled JS
@@ -134,9 +138,9 @@ assert(ssrDiscounted.includes('Wireless Noise-Cancelling Headphones'), 'Must ren
 assert(ssrDiscounted.includes('Audio Equipment'), 'Must render category name');
 assert(ssrDiscounted.includes('3,999'), 'Must render catalogPrice');
 assert(ssrDiscounted.includes('5,000'), 'Must render compareAtPrice');
-assert(ssrDiscounted.includes('20% OFF'), 'Must render discount badge');
-assert(ssrDiscounted.includes('In Stock'), 'Must render In Stock badge');
-assert(ssrDiscounted.includes('Add to Cart'), 'Must render Add to Cart button');
+assert(ssrDiscounted.toLowerCase().includes("20% off"), 'Must render discount badge');
+assert(ssrDiscounted.toLowerCase().includes("in stock"), 'Must render In Stock badge');
+assert(ssrDiscounted.toLowerCase().includes("add to cart"), 'Must render Add to Cart button');
 assert(!ssrDiscounted.includes('disabled=""'), 'In-stock button must not be disabled');
 console.log('✓ Scenario A: Discounted In-Stock Product SSR passes');
 
@@ -172,12 +176,12 @@ const ssrOutOfStock = ReactDOMServer.renderToStaticMarkup(
 );
 
 assert(ssrOutOfStock.includes('Sold Out Smartphone'), 'Must render product name');
-assert(ssrOutOfStock.includes('Out of Stock'), 'Must render Out of Stock indicator');
+assert(ssrOutOfStock.toLowerCase().includes("out of stock"), 'Must render Out of Stock indicator');
 assert(ssrOutOfStock.includes('disabled=""') || ssrOutOfStock.includes('disabled'), 'Out-of-stock button must be disabled');
 assert(ssrOutOfStock.includes('aria-disabled="true"'), 'Out-of-stock button must have aria-disabled="true"');
 assert(ssrOutOfStock.includes('ecom-sf-product-card-img-fallback'), 'Missing image must render fallback');
 assert(!ssrDiscounted.includes('ecom-sf-product-card-img-fallback'), 'Available image must not render fallback');
-assert(!ssrOutOfStock.includes('% OFF'), 'Non-discounted product must not render discount badge');
+assert(!ssrOutOfStock.toLowerCase().includes("% off"), 'Non-discounted product must not render discount badge');
 console.log('✓ Scenario B: Out-of-Stock Product with fallback image SSR passes');
 
 // Test C: Display flags disabled
@@ -194,9 +198,9 @@ const ssrFlagsHidden = ReactDOMServer.renderToStaticMarkup(
 );
 
 assert(!ssrFlagsHidden.includes('Audio Equipment'), 'showCategory: false must hide category');
-assert(!ssrFlagsHidden.includes('20% OFF'), 'showDiscountBadge: false must hide badge');
-assert(!ssrFlagsHidden.includes('In Stock'), 'showStock: false must hide stock');
-assert(!ssrFlagsHidden.includes('Add to Cart'), 'showAddToCart: false must hide button');
+assert(!ssrFlagsHidden.toLowerCase().includes("20% off"), 'showDiscountBadge: false must hide badge');
+assert(!ssrFlagsHidden.toLowerCase().includes("in stock"), 'showStock: false must hide stock');
+assert(!ssrFlagsHidden.toLowerCase().includes("add to cart"), 'showAddToCart: false must hide button');
 console.log('✓ Scenario C: Configurable Display Flags SSR passes');
 
 console.log('\n====================================================');

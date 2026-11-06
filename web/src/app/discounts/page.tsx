@@ -16,6 +16,7 @@ import { listDiscounts } from '@/lib/discounts/api';
 import { TAB_META, describeRule, liveStatus, promotionUrls, tabOf, type PromotionTab } from '@/lib/discounts/describe';
 import type { DiscountRule } from '@/lib/discounts/types';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const TABS: PromotionTab[] = ['automatic', 'coupons', 'campaigns', 'custom'];
 const DAY = 86400000;
@@ -59,7 +60,7 @@ function PromotionsOverview() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60 rounded-lg">
         {TABS.map((t) => (
-          <DropdownMenuItem key={t} className="items-start gap-2.5 rounded-md py-2" onClick={() => (window.location.href = promotionUrls.create(t))}>
+          <DropdownMenuItem key={t} className="items-start gap-2.5 rounded-md py-2" onClick={() => navigate(promotionUrls.create(t))}>
             <TabIcon tab={t} className="size-7" />
             <span>
               <span className="block text-[13px] font-medium capitalize">{TAB_META[t].singular}</span>

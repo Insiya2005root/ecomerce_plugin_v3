@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { Edit02Icon, Image01Icon, PackageIcon } from '@hugeicons/core-free-icons';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { ActionMenu, type ActionItem } from '@/components/admin/ActionMenu';
@@ -24,6 +24,7 @@ import { categoryUrls, collectionUrls, inventoryUrls, productListUrl, productUrl
 import { UNASSIGNED_LOCATION, listInventory, type InventoryItemRow } from '@/lib/inventory';
 import { listLocations } from '@/lib/settings';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 function editAction(label: string, onSelect: () => void): ActionItem[][] {
   return [[{ label, icon: Edit02Icon, onSelect }]];
@@ -40,7 +41,7 @@ function ProductDetail() {
     onUpdated: setProduct,
     onDeleted: (p) => {
       toast.flash('Product deleted', p.name);
-      window.location.href = productListUrl();
+      navigate(productListUrl());
     },
   });
 
@@ -226,7 +227,7 @@ function InventorySection({ product, onEdit }: { product: Product; onEdit: () =>
       title="Inventory"
       actions={
         <ActionMenu
-          groups={[...editAction('Edit inventory', onEdit), [{ label: 'Open in Inventory', icon: PackageIcon, onSelect: () => (window.location.href = inventoryUrls.list(`q=${encodeURIComponent(product.name)}`)) }]]}
+          groups={[...editAction('Edit inventory', onEdit), [{ label: 'Open in Inventory', icon: PackageIcon, onSelect: () => navigate(inventoryUrls.list(`q=${encodeURIComponent(product.name)}`)) }]]}
           label="Inventory actions"
         />
       }

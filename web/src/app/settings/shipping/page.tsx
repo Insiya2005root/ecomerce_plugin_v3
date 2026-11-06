@@ -103,7 +103,7 @@ function ShippingForm({ settings, locations, onSaved }: { settings: CoreSettings
   };
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4 pb-16">
+    <form onSubmit={submit} noValidate className="space-y-4">
       {formError && <InlineError message={formError} />}
 
       <SectionCard title="How shipping is priced">
@@ -221,7 +221,7 @@ function ShippingForm({ settings, locations, onSaved }: { settings: CoreSettings
       </SectionCard>
 
       {dirty && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
+        <div className="sticky bottom-0 z-40 -mx-4 sm:-mx-6 lg:-mx-8 border-t bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80">
           <div className="flex items-center justify-end gap-2 px-4 py-3 sm:px-6 lg:px-8">
             <span className="mr-auto text-xs text-muted-foreground">Unsaved changes</span>
             <Button

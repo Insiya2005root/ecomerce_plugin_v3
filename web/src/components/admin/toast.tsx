@@ -5,6 +5,7 @@ import { Toast } from "@base-ui/react/toast";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AlertCircleIcon, Cancel01Icon, CheckmarkCircle02Icon } from "@hugeicons/core-free-icons";
 import { cn } from "@/lib/utils";
+import { portalContainer } from "@/lib/host";
 
 type ToastKind = "success" | "error";
 
@@ -80,7 +81,7 @@ export function AdminToaster({ children }: { children: React.ReactNode }) {
     <Toast.Provider toastManager={manager} timeout={4000} limit={1}>
       {children}
       <FlashReader />
-      <Toast.Portal>
+      <Toast.Portal container={portalContainer()}>
         {/* Bottom-centre, raised above the sticky save bars: page actions live top-right and Save buttons bottom-right. */}
         <Toast.Viewport className="pointer-events-none fixed bottom-16 left-1/2 z-[60] flex w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-2 sm:w-96">
           <ToastList />

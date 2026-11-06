@@ -1,46 +1,42 @@
 "use client";
 
 import * as React from "react";
-import { HugeiconsIcon } from "@hugeicons/react";
-import { Moon02Icon, Sun03Icon } from "@hugeicons/core-free-icons";
+import { getScopeRoot } from "@/lib/host";
 
-const THEME_KEY = "ecommerce-theme";
+/**
+ * Light/dark for the admin follows OpenExt's own switch (the `dark` class OpenExt puts on <html>), so one
+ * switch controls OpenExt, this admin and the storefront. The class goes on our mount root, because our
+ * stylesheet is scoped to it.
+ */
+const LEGACY_OVERRIDE_KEY = "ecommerce-theme";
 const listeners = new Set<() => void>();
 const subscribe = (cb: () => void) => {
   listeners.add(cb);
   return () => listeners.delete(cb);
 };
-const isDark = () => document.documentElement.classList.contains("dark");
 
-function setDarkMode(next: boolean) {
-  document.documentElement.classList.toggle("dark", next);
-  try {
-    localStorage.setItem(THEME_KEY, next ? "dark" : "light");
-  } catch {
-    // Storage unavailable: the choice lasts for this page only.
-  }
+const hostIsDark = () => document.documentElement.classList.contains("dark");
+
+function applyTheme() {
+  getScopeRoot()?.classList.toggle("dark", hostIsDark());
   listeners.forEach((l) => l());
 }
 
-/** Current mode and a setter; the choice is saved in this browser. */
-export function useDarkMode() {
-  const dark = React.useSyncExternalStore(subscribe, isDark, () => false);
-  return [dark, setDarkMode] as const;
+/** Applies the theme to the mount root and keeps it in step with OpenExt. Returns a cleanup function. */
+export function startTheme(): () => void {
+  try {
+    // Older versions let the admin override OpenExt's theme; drop that so the two always match.
+    localStorage.removeItem(LEGACY_OVERRIDE_KEY);
+  } catch {
+    // Storage unavailable: nothing to clear.
+  }
+  applyTheme();
+  const observer = new MutationObserver(applyTheme);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
 }
 
-/** Small light/dark switch. The initial class is set by an inline script in the layout to avoid a flash. */
-export function ThemeToggle() {
-  const [dark] = useDarkMode();
-  const toggle = () => setDarkMode(!isDark());
-  return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
-      title={dark ? "Light mode" : "Dark mode"}
-      className="fixed bottom-3 left-3 z-30 flex size-8 items-center justify-center rounded-full border bg-card text-muted-foreground shadow-sm transition-colors hover:text-foreground"
-    >
-      <HugeiconsIcon icon={dark ? Sun03Icon : Moon02Icon} strokeWidth={2} className="size-4" />
-    </button>
-  );
+/** Whether the admin is currently dark. */
+export function useDarkMode() {
+  return React.useSyncExternalStore(subscribe, () => getScopeRoot()?.classList.contains("dark") ?? false, () => false);
 }

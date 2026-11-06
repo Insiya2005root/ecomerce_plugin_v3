@@ -115,51 +115,26 @@ assert(
   productCardCode.includes('ecom-sf-product-card-sku'),
   'ProductCard must render ecom-sf-product-card-sku when showSku is true and product has sku'
 );
-assert(
-  productCardCode.includes('productHref = hasValidHref ? href.trim() : undefined'),
-  'ProductCard navigation must remain disabled/unset unless explicit valid href is supplied'
-);
+assert(productCardCode.includes('const link = hasValidHref ? href!.trim() : undefined'), 'ProductCard navigation must remain disabled/unset unless explicit valid href is supplied');
 console.log('✓ ProductCard SKU support & navigation safety verified.');
 
 // 6. ProductGrid Request Cancellation & Numeric Pagination
 console.log('\n--> Checking ProductGrid Request Cancellation & Numeric Pagination...');
 const productGridCode = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'blocks', 'ProductGridBlock.tsx'), 'utf8');
-assert(
-  productGridCode.includes('activeAbortRef') && productGridCode.includes('AbortController'),
-  'ProductGridBlock must manage AbortController to abort in-flight requests on rapid changes'
-);
-assert(
-  productGridCode.includes('activeRequestRef'),
-  'ProductGridBlock must track request tokens to ignore stale asynchronous responses'
-);
-assert(
-  productGridCode.includes('getVisiblePageNumbers'),
-  'ProductGridBlock must have getVisiblePageNumbers for numeric pagination'
-);
-assert(
-  productGridCode.includes('ecom-sf-pagination-btn-active'),
-  'ProductGridBlock must apply active state class to the current page button'
-);
-assert(
-  productGridCode.includes('ecom-sf-pagination-ellipsis'),
-  'ProductGridBlock must render pagination ellipsis'
-);
-assert(
-  productGridCode.includes('aria-current={p === currentPage ? \'page\' : undefined}'),
-  'ProductGridBlock must provide aria-current="page" on the active page button'
-);
-assert(
-  productGridCode.includes('showSku={showSku}'),
-  'ProductGridBlock must forward showSku to ProductCard'
-);
+assert(productGridCode.includes('abortRef') && productGridCode.includes('AbortController'), 'ProductGridBlock must manage AbortController to abort in-flight requests on rapid changes');
+assert(productGridCode.includes('requestRef.current !== requestId'), 'ProductGridBlock must track request tokens to ignore stale asynchronous responses');
+assert(productGridCode.includes('function visiblePages('), 'ProductGridBlock must compute visible page numbers');
+assert(productGridCode.includes('isActive={p === page}'), 'ProductGridBlock must mark the current page');
+assert(productGridCode.includes('<PaginationEllipsis'), 'ProductGridBlock must render pagination ellipsis');
+assert(fs.readFileSync(path.join(WEB_SRC, 'components', 'ui', 'pagination.tsx'), 'utf8').includes('aria-current={isActive ? "page" : undefined}'), 'shadcn PaginationLink provides aria-current="page"');
+assert(productGridCode.includes('showSku={Boolean(settings.showSku)}'), 'ProductGridBlock must forward showSku to ProductCard');
 console.log('✓ ProductGrid request cancellation, numeric pagination & accessibility verified.');
 
 // 7. Stylesheet Completeness
 console.log('\n--> Checking Storefront Stylesheet...');
-const stylesCss = fs.readFileSync(path.join(WEB_SRC, 'storefront', 'styles.css'), 'utf8');
-assert(stylesCss.includes('.ecom-sf-product-card-sku'), 'styles.css must contain .ecom-sf-product-card-sku');
-assert(stylesCss.includes('.ecom-sf-pagination-ellipsis'), 'styles.css must contain .ecom-sf-pagination-ellipsis');
-assert(stylesCss.includes('.ecom-sf-pagination-btn-active'), 'styles.css must contain .ecom-sf-pagination-btn-active');
+assert(productCardCode.includes('ecom-sf-product-card-sku text-xs'), 'SKU must be styled');
+assert(fs.readFileSync(path.join(WEB_SRC, 'components', 'ui', 'pagination.tsx'), 'utf8').includes('pagination-ellipsis'), 'Pagination ellipsis comes from shadcn');
+assert(productGridCode.includes('ecom-sf-pagination-btn'), 'Page links keep the ecom-sf-pagination-btn hook');
 console.log('✓ Stylesheet completeness verified.');
 
 // 8. Rebuilt Artifacts Verification

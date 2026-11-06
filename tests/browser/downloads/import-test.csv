@@ -1,0 +1,5 @@
+Name,SKU,Price,Category,Collection,Status,Stock
+Imported Lamp,IMP-LAMP,1499,Home,Summer 2026,Published,7
+Imported Scarf,,349,Apparel > Shirts,,Draft,2
+Sample product 02 Renamed,SKU-T002,,,,,99
+Broken,,abc,Nowhere,,,

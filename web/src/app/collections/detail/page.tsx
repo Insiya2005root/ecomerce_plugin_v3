@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { Add01Icon, Delete02Icon, Edit02Icon, Folder01Icon, MinusSignCircleIcon, PackageIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { ApiError, deleteCollection, getCollection, listCollections, listProduct
 import type { Collection, Product } from '@/lib/products/types';
 import { collectionUrls, productUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 
@@ -120,7 +121,7 @@ function CollectionDetail() {
         try {
           await deleteCollection(collection._id);
           toast.flash('Collection deleted', collection.title);
-          window.location.href = collectionUrls.list();
+          navigate(collectionUrls.list());
         } catch (err) {
           toast.error('Could not delete collection', err instanceof Error ? err.message : undefined);
         }

@@ -1,8 +1,7 @@
 import type { StatusTone } from "@/components/admin/StatusBadge";
 import { formatMoney } from "@/lib/format";
+import { adminUrl } from "@/lib/router";
 import type { CustomCondition, DiscountRule } from "./types";
-
-const ADMIN_BASE = "/plugins/ecommerce-plugin/ui/admin";
 
 /** The four Promotions tabs. Rules are split by type/automatic flag exactly as the original pages did. */
 export type PromotionTab = "automatic" | "coupons" | "campaigns" | "custom";
@@ -13,7 +12,13 @@ export function tabOf(rule: Pick<DiscountRule, "type" | "isAutomatic">): Promoti
   return rule.isAutomatic ? "automatic" : "coupons";
 }
 
-const TAB_DIR: Record<PromotionTab, string> = { automatic: "all", coupons: "coupons", campaigns: "campaigns", custom: "custom" };
+/** Sidebar section (adminNav id) of each tab. */
+const TAB_NAV: Record<PromotionTab, string> = {
+  automatic: "ecommerce-discounts-automatic",
+  coupons: "ecommerce-discounts-coupons",
+  campaigns: "ecommerce-discounts-campaigns",
+  custom: "ecommerce-discounts-custom",
+};
 
 export const TAB_META: Record<PromotionTab, { label: string; singular: string; description: string }> = {
   automatic: { label: "Automatic discounts", singular: "automatic discount", description: "Offers that apply on their own when a cart qualifies." },
@@ -23,11 +28,11 @@ export const TAB_META: Record<PromotionTab, { label: string; singular: string; d
 };
 
 export const promotionUrls = {
-  overview: () => `${ADMIN_BASE}/discounts/index.html`,
-  list: (tab: PromotionTab) => `${ADMIN_BASE}/discounts/${TAB_DIR[tab]}/index.html`,
-  create: (tab: PromotionTab) => `${ADMIN_BASE}/discounts/${TAB_DIR[tab]}/add/index.html`,
-  edit: (rule: Pick<DiscountRule, "_id" | "type" | "isAutomatic">) => `${ADMIN_BASE}/discounts/${TAB_DIR[tabOf(rule)]}/edit/index.html?id=${encodeURIComponent(rule._id)}`,
-  detail: (id: string) => `${ADMIN_BASE}/discounts/detail/index.html?id=${encodeURIComponent(id)}`,
+  overview: () => adminUrl("ecommerce-discounts"),
+  list: (tab: PromotionTab) => adminUrl(TAB_NAV[tab]),
+  create: (tab: PromotionTab) => adminUrl(TAB_NAV[tab], "add"),
+  edit: (rule: Pick<DiscountRule, "_id" | "type" | "isAutomatic">) => adminUrl(TAB_NAV[tabOf(rule)], "edit", { id: rule._id }),
+  detail: (id: string) => adminUrl("ecommerce-discounts", "detail", { id }),
 };
 
 export type LiveStatus = "Active" | "Scheduled" | "Expired" | "Limit reached" | "Paused" | "Draft" | "Archived";

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams } from '@/lib/router';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Add01Icon, Delete02Icon, Edit02Icon, FolderTreeIcon, PackageIcon } from '@hugeicons/core-free-icons';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import { categoryPath } from '@/lib/products/form';
 import type { Category, Product } from '@/lib/products/types';
 import { categoryUrls, productUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 
@@ -122,7 +123,7 @@ function CategoryDetail() {
         try {
           await deleteCategory(id);
           toast.flash('Category deleted', category.name);
-          window.location.href = categoryUrls.list();
+          navigate(categoryUrls.list());
         } catch (err) {
           toast.error('Could not delete category', err instanceof Error ? err.message : undefined);
         }

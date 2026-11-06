@@ -21,6 +21,7 @@ import { categoryPath } from '@/lib/products/form';
 import type { Category } from '@/lib/products/types';
 import { categoryUrls } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 type DrawerState = { open: boolean; category: Category | null; parentId: string | null };
 const CLOSED: DrawerState = { open: false, category: null, parentId: null };
@@ -150,7 +151,7 @@ function CategoriesList() {
                   className="cursor-pointer"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a,button,[role="menu"]')) return;
-                    window.location.href = categoryUrls.detail(String(c._id));
+                    navigate(categoryUrls.detail(String(c._id)));
                   }}
                 >
                   <TableCell className="py-2.5 pl-4">

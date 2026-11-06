@@ -32,6 +32,7 @@ import {
 } from '@/lib/products/types';
 import { productUrls, rememberListQuery } from '@/lib/products/urls';
 import { cn } from '@/lib/utils';
+import { navigate } from '@/lib/router';
 
 const PAGE_SIZE = 20;
 
@@ -370,7 +371,7 @@ function ProductsList() {
                         className="cursor-pointer"
                         onClick={(e) => {
                           if ((e.target as HTMLElement).closest('a,button,[role="menu"]')) return;
-                          window.location.href = productUrls.detail(p._id);
+                          navigate(productUrls.detail(p._id));
                         }}
                       >
                         <TableCell className="max-w-[18rem] py-2.5 pl-4">

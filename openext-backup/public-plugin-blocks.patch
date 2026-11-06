@@ -1,0 +1,37 @@
+diff --git a/src/components/editor/renderblock.tsx b/src/components/editor/renderblock.tsx
+index 65271f2..8d9cbee 100644
+--- a/src/components/editor/renderblock.tsx
++++ b/src/components/editor/renderblock.tsx
+@@ -19,6 +19,7 @@ import { NavbarBlock } from './blocks/NavbarBlock';
+ import { GenericUiBlock } from './blocks/GenericUiBlock';
+ import { PluginBlockChrome } from './blocks/PluginBlockChrome';
+ import { pluginRegistry } from '@/lib/pluginRegistry';
++import { usePluginsOptional } from '@/context/PluginContext';
+ import { ThemeEngineFrameBlock } from './blocks/ThemeEngineFrameBlock';
+ import { ContactUI } from '@/components/ui/ContactUI';
+ import { ContactSimple } from '@/components/ui/ContactSimple';
+@@ -114,6 +115,10 @@ const genericUiBlocks: Record<string, { component: React.ComponentType<BlockRend
+ const reusableUiTypes = ['radio', 'checkbox', 'avatar', 'separator', 'skeleton', 'switch', 'textarea', 'table', 'tabs'];
+ 
+ const RenderBlock = ({ block, isEditing = true }: BlockRendererProps) => {
++  // Plugins register their blocks after the page first renders (they load in the browser), so re-render
++  // when the plugin list arrives; otherwise plugin blocks on public pages stay empty.
++  usePluginsOptional();
++
+   // 0. Theme Engine exact canvas iframe
+   if (block.type === 'theme-engine-frame') {
+     return <ThemeEngineFrameBlock block={block} isEditing={isEditing} />;
+diff --git a/src/context/PluginContext.tsx b/src/context/PluginContext.tsx
+index 8d9aae3..a61727c 100644
+--- a/src/context/PluginContext.tsx
++++ b/src/context/PluginContext.tsx
+@@ -190,6 +190,9 @@ export const PluginProvider = ({ children }: { children: ReactNode }) => {
+   );
+ };
+ 
++/** Same as usePlugins, but returns undefined outside a PluginProvider instead of throwing. */
++export const usePluginsOptional = () => useContext(PluginContext);
++
+ export const usePlugins = () => {
+   const context = useContext(PluginContext);
+   if (context === undefined) {

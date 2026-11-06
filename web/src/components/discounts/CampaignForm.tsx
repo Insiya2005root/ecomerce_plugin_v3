@@ -16,6 +16,7 @@ import { TYPE_LABEL, describeRule, liveStatus, promotionUrls, tabOf } from "@/li
 import { settingsFromRule, settingsToPayload, validateSettings, type FormErrors, type RuleSettings } from "@/lib/discounts/form";
 import type { DiscountRule } from "@/lib/discounts/types";
 import { cn } from "@/lib/utils";
+import { navigate } from "@/lib/router";
 
 export type CampaignValues = RuleSettings & {
   name: string;
@@ -100,7 +101,7 @@ export function CampaignForm({ mode, rule, initial }: { mode: "create" | "edit";
       const saved = mode === "create" ? await createDiscount(payload) : await updateDiscount(rule!._id, payload);
       allowLeave();
       toast.flash(mode === "create" ? "Campaign created" : "Campaign saved", saved.name);
-      window.location.href = promotionUrls.detail(saved._id);
+      navigate(promotionUrls.detail(saved._id));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Could not save.");
       setSaving(false);
@@ -110,7 +111,7 @@ export function CampaignForm({ mode, rule, initial }: { mode: "create" | "edit";
   const selected = (rules ?? []).filter((r) => values.childRuleIds.includes(r._id));
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4 pb-20">
+    <form onSubmit={submit} noValidate className="space-y-4">
       {submitError && <InlineError message={submitError} />}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="min-w-0 space-y-4">

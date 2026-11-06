@@ -18,6 +18,7 @@ import { listDiscounts } from "@/lib/discounts/api";
 import { TAB_META, TYPE_LABEL, describeRule, liveStatus, promotionUrls, scheduleLabel, tabOf, type LiveStatus, type PromotionTab } from "@/lib/discounts/describe";
 import type { DiscountRule } from "@/lib/discounts/types";
 import { cn } from "@/lib/utils";
+import { navigate } from "@/lib/router";
 
 const STATUS_OPTIONS: SelectOption[] = [
   { value: "all", label: "All statuses" },
@@ -151,7 +152,7 @@ export function PromotionsList({ tab }: { tab: PromotionTab }) {
                   className="cursor-pointer"
                   onClick={(e) => {
                     if ((e.target as HTMLElement).closest('a,button,[role="menu"]')) return;
-                    window.location.href = promotionUrls.detail(r._id);
+                    navigate(promotionUrls.detail(r._id));
                   }}
                 >
                   <TableCell className="max-w-[18rem] py-2.5 pl-4">

@@ -72,6 +72,12 @@ async function typeInto(page, selector, value) {
 (async () => {
   const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
   const page = await browser.newPage();
+  // The admin scrolls inside #plugin-root under a sticky save bar: center targets before clicking (centerBeforeClick).
+  const rawClick = page.click.bind(page);
+  page.click = async (sel, opts) => {
+    await page.$eval(sel, (el) => el.scrollIntoView({ block: 'center' })).catch(() => {});
+    return rawClick(sel, opts);
+  };
   await page.setViewport({ width: 1280, height: 900 });
   page.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') consoleProblems.push(`[${m.type()}] ${m.text()}`);
@@ -148,8 +154,8 @@ async function typeInto(page, selector, value) {
     console.log('\n--> Detail + drawers');
     await page.goto(`${BASE}/products/index.html?q=linen`, { waitUntil: 'networkidle0' });
     await waitText(page, '1–1 of 1 results');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), page.click('tbody tr td:nth-child(3)')]);
-    assert.ok(page.url().includes('/products/detail/'), page.url());
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), page.click('tbody tr td:nth-child(3)')]);
+    assert.ok(page.url().includes('ecommerce-products?view=detail'), page.url());
     await waitText(page, 'Customer price');
     await shot(page, 'detail');
     ok('row click opens the detail page (two-column sections)');
@@ -213,19 +219,19 @@ async function typeInto(page, selector, value) {
     ok('all drawer edits persist after a full reload');
 
     console.log('\n--> Edit page');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'a', 'Edit all fields')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'a', 'Edit all fields')]);
     await page.waitForFunction(() => document.querySelector('#name')?.value === 'Linen Shirt');
     assert.strictEqual(await page.$eval('#discountPercentage', (i) => i.value), '20');
     assert.strictEqual(await page.$$eval('[id^="variant-"][id$="-size"]', (els) => els.length), 3);
     await shot(page, 'edit');
     await typeInto(page, '#name', 'Linen Shirt Classic');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button', 'Save changes')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button', 'Save changes')]);
     await waitText(page, 'Product saved');
     await waitText(page, 'Linen Shirt Classic');
     ok('edit page loads every field, saves, returns to detail with a toast');
 
     console.log('\n--> Duplicate + delete');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), openMenu(page, 'Product actions', 'Duplicate')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), openMenu(page, 'Product actions', 'Duplicate')]);
     await waitText(page, 'Linen Shirt Classic (Copy)');
     await waitText(page, 'Product duplicated');
     assert.ok((await page.$eval('main', (m) => m.innerText)).includes('Draft'));
@@ -234,7 +240,7 @@ async function typeInto(page, selector, value) {
     await openMenu(page, 'Product actions', 'Delete');
     await waitText(page, 'Delete product?');
     await shot(page, 'delete-confirm');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button', 'Delete')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button', 'Delete')]);
     await waitText(page, 'Product deleted');
     await waitText(page, 'of 1 results'); // list remembered the "linen" search
     ok('delete with confirmation returns to the list, filters remembered');
@@ -250,7 +256,7 @@ async function typeInto(page, selector, value) {
     await page.type('#stock', '12');
     await chooseOption(page, 'categoryId', 'Home');
     await shot(page, 'create-filled');
-    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), clickByText(page, 'button', 'Create product')]);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }).then(() => page.waitForNetworkIdle({ idleTime: 300 })), clickByText(page, 'button', 'Create product')]);
     await waitText(page, 'Product created');
     const created = await page.$eval('main', (m) => m.innerText);
     assert.ok(created.includes('Ceramic Mug') && created.includes('₹499.00') && /SKU-\d{6}/.test(created), 'auto SKU + price');

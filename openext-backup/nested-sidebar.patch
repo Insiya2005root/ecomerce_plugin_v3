@@ -1,0 +1,163 @@
+diff --git a/src/components/Sidebar.tsx b/src/components/Sidebar.tsx
+index 6e44091..07a0a9d 100644
+--- a/src/components/Sidebar.tsx
++++ b/src/components/Sidebar.tsx
+@@ -33,7 +33,7 @@ import {
+   type LucideIcon,
+ } from 'lucide-react';
+ import { usePlugins, type PluginRecord } from '@/context/PluginContext';
+-import { runtimePluginPath } from '@/lib/plugins/adminNav';
++import { orderAdminNavForSidebar, runtimePluginPath } from '@/lib/plugins/adminNav';
+ import { extensionNavLinks, type ExtensionHostPage } from '@/lib/extensions/hostPages';
+ import { useExtensionHostPages } from '@/hooks/useExtensionHostPages';
+ import { resolveNavIcon } from '@/lib/plugins/navIcons';
+@@ -45,7 +45,8 @@ type NavSection = {
+   icon: LucideIcon;
+   path?: string;
+   navSection?: NavSectionId;
+-  links: { label: string; icon: LucideIcon; path: string }[];
++  /** parentPath: set on nested plugin pages; they render indented under that link. */
++  links: { label: string; icon: LucideIcon; path: string; parentPath?: string }[];
+ };
+ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+ import { Button } from '@/components/ui/button';
+@@ -228,10 +229,11 @@ function uploadedSystemNavSections(
+         return [];
+       }
+ 
+-      const pluginLinks = navPages.map((item) => ({
++      const pluginLinks = orderAdminNavForSidebar(navPages).map(({ item, parentId }) => ({
+         label: item.label,
+         icon: resolveNavIcon(item.icon),
+         path: runtimePluginPath(p.pluginId, item.id),
++        ...(parentId ? { parentPath: runtimePluginPath(p.pluginId, parentId) } : {}),
+       }));
+       const extensionLinks = extensionNavLinks(p.pluginId, extensionPages).map((item) => ({
+         label: item.label,
+@@ -544,24 +546,35 @@ export default function Sidebar() {
+                         </Tooltip>
+ 
+                         <CollapsibleContent className="pl-9 pr-2 py-1 space-y-1">
+-                          {item.links.map((link) => (
++                          {item.links
++                            .filter(
++                              (link) =>
++                                // Nested pages show while their parent or a sibling is the current page.
++                                !link.parentPath ||
++                                isActive(link.parentPath) ||
++                                item.links.some((l) => l.parentPath === link.parentPath && isActive(l.path))
++                            )
++                            .map((link) => (
+                             <Button
+-                              key={link.label}
++                              key={link.path}
+                               variant={isActive(link.path) ? 'secondary' : 'ghost'}
+                               size="sm"
+                               className={cn(
+                                 'w-full justify-start h-9',
++                                link.parentPath && 'h-8 pl-8 text-[13px]',
+                                 isActive(link.path) && 'font-medium'
+                               )}
+                               asChild
+                             >
+                               <Link href={link.path} prefetch>
+-                                <link.icon
+-                                  className={cn(
+-                                    'h-4 w-4 mr-2',
+-                                    isActive(link.path) ? 'text-primary' : 'text-muted-foreground'
+-                                  )}
+-                                />
++                                {!link.parentPath && (
++                                  <link.icon
++                                    className={cn(
++                                      'h-4 w-4 mr-2',
++                                      isActive(link.path) ? 'text-primary' : 'text-muted-foreground'
++                                    )}
++                                  />
++                                )}
+                                 <span>{link.label}</span>
+                               </Link>
+                             </Button>
+diff --git a/src/lib/plugins/adminNav.ts b/src/lib/plugins/adminNav.ts
+index f44bc04..9463b61 100644
+--- a/src/lib/plugins/adminNav.ts
++++ b/src/lib/plugins/adminNav.ts
+@@ -18,6 +18,26 @@ export function runtimePluginPath(pluginId: string, navId?: string): string {
+   return navId ? `${base}/${encodeURIComponent(navId)}` : base;
+ }
+ 
++/**
++ * Orders visible nav pages for the sidebar: each nested page directly after its parent.
++ * A page whose parent is not visible (e.g. hidden by role page access) is treated as top-level.
++ */
++export function orderAdminNavForSidebar(
++  pages: PluginAdminNavItem[]
++): Array<{ item: PluginAdminNavItem; parentId?: string }> {
++  const visibleIds = new Set(pages.map((item) => item.id));
++  const isNested = (item: PluginAdminNavItem) =>
++    Boolean(item.parent && item.parent !== item.id && visibleIds.has(item.parent));
++  return pages
++    .filter((item) => !isNested(item))
++    .flatMap((top) => [
++      { item: top },
++      ...pages
++        .filter((child) => isNested(child) && child.parent === top.id)
++        .map((child) => ({ item: child, parentId: top.id })),
++    ]);
++}
++
+ export function resolveAdminNavEntry(
+   adminEntry: string | undefined,
+   adminNav: PluginAdminNavItem[] | undefined,
+@@ -93,8 +113,25 @@ export function parseAdminNav(raw: unknown): PluginAdminNavItem[] | undefined {
+     seenIds.add(id);
+ 
+     const icon = typeof item.icon === 'string' && item.icon.trim() ? item.icon.trim() : undefined;
++    const parent =
++      typeof item.parent === 'string' && item.parent.trim() ? item.parent.trim().toLowerCase() : undefined;
++
++    items.push({ id, label, entry: entryPath, icon, ...(parent ? { parent } : {}) });
++  }
+ 
+-    items.push({ id, label, entry: entryPath, icon });
++  // Parents may appear anywhere in the list, so validate nesting once every id is known.
++  const byId = new Map(items.map((item) => [item.id, item]));
++  for (const item of items) {
++    if (!item.parent) continue;
++    const parentItem = byId.get(item.parent);
++    if (!parentItem) {
++      throw new Error(`manifest.json "adminNav" entry "${item.label}" has unknown parent "${item.parent}"`);
++    }
++    if (parentItem.id === item.id || parentItem.parent) {
++      throw new Error(
++        `manifest.json "adminNav" entry "${item.label}" must use a top-level item as its parent (one level of nesting)`
++      );
++    }
+   }
+ 
+   return items;
+diff --git a/src/models/Plugin.ts b/src/models/Plugin.ts
+index 5c120e0..fc35bf9 100644
+--- a/src/models/Plugin.ts
++++ b/src/models/Plugin.ts
+@@ -22,6 +22,7 @@ const PluginSchema = new Schema<IPluginDocument>(
+           label: { type: String, required: true },
+           entry: { type: String, required: true },
+           icon: { type: String },
++          parent: { type: String },
+         },
+       ],
+       default: undefined,
+diff --git a/src/types/index.ts b/src/types/index.ts
+index 65cbb6d..c381b93 100644
+--- a/src/types/index.ts
++++ b/src/types/index.ts
+@@ -488,6 +488,8 @@ export interface PluginAdminNavItem {
+   entry: string;
+   /** Optional Lucide icon name (e.g. list, users, settings). */
+   icon?: string;
++  /** Optional id of a top-level adminNav item; the sidebar nests this page under it (one level). */
++  parent?: string;
+ }
+ 
+ export interface IPlugin {

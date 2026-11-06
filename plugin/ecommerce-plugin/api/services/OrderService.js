@@ -147,7 +147,7 @@ class OrderService {
                 status: 'Pending',
                 paymentStatus: 'Not paid',
                 fulfillmentStatus: 'Not fulfilled',
-                events: [event('placed', ctx.source === 'admin_cart' ? 'Order placed from the Admin cart' : 'Order placed')],
+                events: [event('placed', ctx.source === 'admin_cart' ? 'Order placed from the Admin cart' : ctx.source === 'storefront' ? 'Order placed on the storefront (Cash on Delivery)' : 'Order placed')],
             }).save();
             // Count coupon / rule usage once per order so usage limits are enforced.
             const ruleIds = [...new Set((pricing.appliedDiscounts || []).map((d) => String(d.ruleId || '')).filter(isObjectId))];

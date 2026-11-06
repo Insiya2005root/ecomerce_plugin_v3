@@ -1,0 +1,1 @@
+import{Na as o}from"./chunk-OMTAZRBN.js";import{c as e,p as t}from"./chunk-S6MA4CYQ.js";var n=e(t());function m({className:a,...d}){return(0,n.jsx)("div",{"data-slot":"skeleton",className:o("animate-pulse rounded-2xl bg-muted",a),...d})}export{m as a};

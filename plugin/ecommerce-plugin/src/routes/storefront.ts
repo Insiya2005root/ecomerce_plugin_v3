@@ -255,6 +255,8 @@ const registerStorefrontRoutes: any = (app: any) => {
         page = '1',
         limit = '12',
         ids,
+        minPrice,
+        maxPrice,
       } = req.query as Record<string, string | undefined>;
 
       const parsedPage = Math.max(1, parseInt(String(page || '1'), 10) || 1);
@@ -305,9 +307,25 @@ const registerStorefrontRoutes: any = (app: any) => {
               pagination: { total: 0, page: parsedPage, limit: parsedLimit, totalPages: 0 },
             });
           }
-          query.categoryId = new mongoose.Types.ObjectId(trimmedCat);
+          // A category includes its sub-categories (Apparel shows products filed under Apparel › Shirts).
+          const CategoryModel = Category.getModel();
+          const ids = [trimmedCat];
+          for (let frontier = [trimmedCat], depth = 0; frontier.length && depth < 5; depth++) {
+            const children = await CategoryModel.find({ tenantId, parentId: { $in: frontier } }).select('_id').lean();
+            frontier = children.map((c: any) => String(c._id)).filter((id: string) => !ids.includes(id));
+            ids.push(...frontier);
+          }
+          query.categoryId = { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) };
         }
       }
+
+      // Price range from the shop filter, on the price shoppers actually see.
+      const min = Number(minPrice);
+      const max = Number(maxPrice);
+      const priceBounds: any[] = [];
+      if (minPrice !== undefined && minPrice !== '' && Number.isFinite(min) && min > 0) priceBounds.push({ $gte: [EFFECTIVE_PRICE, min] });
+      if (maxPrice !== undefined && maxPrice !== '' && Number.isFinite(max) && max >= 0) priceBounds.push({ $lte: [EFFECTIVE_PRICE, max] });
+      if (priceBounds.length) query.$expr = priceBounds.length === 1 ? priceBounds[0] : { $and: priceBounds };
 
       let products: any[] = [];
       let total = 0;
@@ -319,35 +337,7 @@ const registerStorefrontRoutes: any = (app: any) => {
           { $match: query },
           {
             $addFields: {
-              effectiveCatalogPrice: {
-                $cond: [
-                  { $gt: [{ $ifNull: ['$discountPercentage', 0] }, 0] },
-                  {
-                    $round: [
-                      {
-                        $multiply: [
-                          '$price',
-                          { $subtract: [1, { $divide: ['$discountPercentage', 100] }] },
-                        ],
-                      },
-                      2,
-                    ],
-                  },
-                  {
-                    $cond: [
-                      {
-                        $and: [
-                          { $ne: ['$discountPrice', null] },
-                          { $gte: ['$discountPrice', 0] },
-                          { $lt: ['$discountPrice', '$price'] },
-                        ],
-                      },
-                      '$discountPrice',
-                      '$price',
-                    ],
-                  },
-                ],
-              },
+              effectiveCatalogPrice: EFFECTIVE_PRICE,
             },
           },
           { $sort: { effectiveCatalogPrice: sortDir, _id: 1 } },
@@ -686,5 +676,36 @@ registerStorefrontRoutes.resolveTenantId = resolveTenantId;
 registerStorefrontRoutes.toPublicCategoryDTO = toPublicCategoryDTO;
 registerStorefrontRoutes.toPublicProductDTO = toPublicProductDTO;
 registerStorefrontRoutes.toPublicSettingsDTO = toPublicSettingsDTO;
+
+// The price shoppers see (product discount applied); used to sort and to filter by price.
+const EFFECTIVE_PRICE = {
+    $cond: [
+      { $gt: [{ $ifNull: ['$discountPercentage', 0] }, 0] },
+      {
+        $round: [
+          {
+            $multiply: [
+              '$price',
+              { $subtract: [1, { $divide: ['$discountPercentage', 100] }] },
+            ],
+          },
+          2,
+        ],
+      },
+      {
+        $cond: [
+          {
+            $and: [
+              { $ne: ['$discountPrice', null] },
+              { $gte: ['$discountPrice', 0] },
+              { $lt: ['$discountPrice', '$price'] },
+            ],
+          },
+          '$discountPrice',
+          '$price',
+        ],
+      },
+    ],
+};
 
 export = registerStorefrontRoutes;
